@@ -60,16 +60,29 @@ class AppModule(appModuleHandler.AppModule):
 			clsList.insert(0, intelliSenseMenuItem)
 		elif obj.name == 'Treegrid Accessibility' and obj.role == controlTypes.ROLE_WINDOW:
 			clsList.insert(0, VarsTreeView)
-		elif obj.name is None and obj.windowClassName == 'TREEGRID' and obj.role == 3:
+		elif obj.name is None and obj.windowClassName == 'TREEGRID' and obj.role == controlTypes.ROLE_PANE:
 			clsList.insert(0, BadVarView)
 
 	def event_NVDAObject_init(self, obj):
 		if obj.name == "Text Editor" and obj.role == controlTypes.ROLE_EDITABLETEXT:
 			obj.description = ''
+		elif obj.name == "Active Files" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
+			#this object reports the descktop object as its container, this causes 2 issues 
+			#redundent announcement of the foreground object 
+			#and losing the real foreground object which makes reporting the status bar script not reliable			
+			obj.role = controlTypes.ROLE_LIST
+			obj.container = api.getForegroundObject()
+			#description here also is redundant, so, remove it
+			obj.description = ""
+		elif obj.name == "Active Tool Windows" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
+			#do the same for tool windows List
+			obj.description = ''
+
 
 	def event_gainFocus(self, obj, nextHandler):
 		global intelliSenseLastFocused
 		global lastFocusedIntelliSenseItem
+		log.debug(obj._get_devInfo())
 		if obj.name == "Text Editor" and obj.role == controlTypes.ROLE_EDITABLETEXT:
 			if _isCompletionPopupShowing():
 				api.setNavigatorObject(lastFocusedIntelliSenseItem)
@@ -79,7 +92,6 @@ class AppModule(appModuleHandler.AppModule):
 		lastFocusedIntelliSenseItem = None
 		nextHandler()
 
-#still not reliable, we need another method to get the status bar
 #almost copied from NVDA core with minor modifications
 	def script_reportStatusLine(self, gesture):
 		obj = api.getForegroundObject().lastChild
