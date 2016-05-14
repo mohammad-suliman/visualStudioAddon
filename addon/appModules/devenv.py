@@ -58,6 +58,8 @@ class AppModule(appModuleHandler.AppModule):
 			clsList.insert(0, editorTabControl)
 		elif isinstance(obj, UIA) and obj.UIAElement.currentClassName == "IntellisenseMenuItem" and obj.role == controlTypes.ROLE_MENUITEM:
 			clsList.insert(0, intelliSenseMenuItem)
+		elif isinstance(obj, UIA) and obj.UIAElement.currentClassName == "MenuItem" and obj.role == controlTypes.ROLE_MENUITEM:
+			clsList.insert(0, VSMenuItem)
 		elif obj.name == 'Treegrid Accessibility' and obj.role == controlTypes.ROLE_WINDOW:
 			clsList.insert(0, VarsTreeView)
 		elif obj.name is None and obj.windowClassName == 'TREEGRID' and obj.role == controlTypes.ROLE_PANE:
@@ -74,15 +76,14 @@ class AppModule(appModuleHandler.AppModule):
 			obj.container = api.getForegroundObject()
 			#description here also is redundant, so, remove it
 			obj.description = ""
-		elif obj.name == "Active Tool Windows" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
+		elif obj.name == "Active Tool Windows" and obj.role  == controlTypes.ROLE_LIST:
 			#do the same for tool windows List
-			obj.description = ''
+			obj.description = ""
 
 
 	def event_gainFocus(self, obj, nextHandler):
 		global intelliSenseLastFocused
 		global lastFocusedIntelliSenseItem
-		log.debug(obj._get_devInfo())
 		if obj.name == "Text Editor" and obj.role == controlTypes.ROLE_EDITABLETEXT:
 			if _isCompletionPopupShowing():
 				api.setNavigatorObject(lastFocusedIntelliSenseItem)
@@ -94,6 +95,8 @@ class AppModule(appModuleHandler.AppModule):
 
 #almost copied from NVDA core with minor modifications
 	def script_reportStatusLine(self, gesture):
+		#it seems that the status bar is the last child of the forground object
+		#so, get it from there
 		obj = api.getForegroundObject().lastChild
 		found=False
 		if obj and obj.role == controlTypes.ROLE_STATUSBAR:
@@ -325,4 +328,19 @@ class BadVarView(ContentGenericClient):
 		"kb:leftArrow": "moveLeft",
 		"kb:rightArrow": "moveRight"
 	}
+
+
+# a class for ordinary menu items in visual studio
+class VSMenuItem(UIA):
+
+	def _get_states(self):
+		states = super(VSMenuItem, self)._get_states()
+		# visual studio exposes the menu item which has a sub menu as collapsed
+		#remove this state and add HASPOP state to fix NVDA behavior
+		if controlTypes.STATE_COLLAPSED in states:
+			states.remove(controlTypes.STATE_COLLAPSED)
+			states.add(controlTypes.STATE_HASPOPUP)
+		#this state is redundant in this context
+		states.discard(controlTypes.STATE_CHECKABLE)
+		return states
 
