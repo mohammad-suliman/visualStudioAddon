@@ -2,7 +2,7 @@
 #author: mohammad suliman (mohmad.s93@gmail.com)
 
 import appModuleHandler
-from NVDAObjects.UIA import UIA 
+from NVDAObjects.UIA import UIA, WpfTextView
 #from NVDAObjects.behaviors import EditableTextWithAutoSelectDetection
 from NVDAObjects.IAccessible import IAccessible, ContentGenericClient
 from NVDAObjects import NVDAObjectTextInfo
@@ -20,12 +20,19 @@ import scriptHandler
 from globalCommands import SCRCAT_FOCUS
 import re
 
+# some user configuration vars to control how the add-on behaves
+announceIntelliSensePosInfo = False
+beepOnBreakpoints = True
+announceBreakpoints = True
+
+# global vars
 intelliSenseLastFocused = False
 
 lastFocusedIntelliSenseItem = None
 
-announceIntelliSensePosInfo = False
+caretMovedToDifferentLine = False
 
+# global functions
 def _isCompletionPopupShowing():
 	obj = api.getForegroundObject()
 	try:
@@ -64,11 +71,14 @@ class AppModule(appModuleHandler.AppModule):
 			clsList.insert(0, VarsTreeView)
 		elif obj.name is None and obj.windowClassName == 'TREEGRID' and obj.role == controlTypes.ROLE_PANE:
 			clsList.insert(0, BadVarView)
+		elif isinstance(obj, UIA) and obj.UIAElement.currentClassName == "TextMarker" and obj.role == controlTypes.ROLE_UNKNOWN and obj.name.startswith("Breakpoint"):
+			clsList.insert(0, VSBreakpoint)
+		elif obj.name == "Text Editor" and obj.role == controlTypes.ROLE_EDITABLETEXT:
+			clsList.insert(0, VSTextEditor)
+
 
 	def event_NVDAObject_init(self, obj):
-		if obj.name == "Text Editor" and obj.role == controlTypes.ROLE_EDITABLETEXT:
-			obj.description = ''
-		elif obj.name == "Active Files" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
+		if obj.name == "Active Files" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
 			#this object reports the descktop object as its container, this causes 2 issues 
 			#redundent announcement of the foreground object 
 			#and losing the real foreground object which makes reporting the status bar script not reliable			
@@ -92,6 +102,9 @@ class AppModule(appModuleHandler.AppModule):
 		intelliSenseLastFocused = False
 		lastFocusedIntelliSenseItem = None
 		nextHandler()
+
+#	def event_nameChange(self, obj, nextHandler):
+#		log.debug(obj._get_devInfo())
 
 #almost copied from NVDA core with minor modifications
 	def script_reportStatusLine(self, gesture):
@@ -344,3 +357,80 @@ class VSMenuItem(UIA):
 		states.discard(controlTypes.STATE_CHECKABLE)
 		return states
 
+getLineText = re.compile("Ln \d+")
+getLineNum = re.compile("\d+$")
+
+def _getCurLineNumber():
+	obj = api.getForegroundObject().lastChild
+	text = None
+	if obj and obj.role == controlTypes.ROLE_STATUSBAR:
+		text = api.getStatusBarText(obj)
+	if not text:
+		return 0
+	lineText = re.search(getLineText, text)
+	if not lineText:
+		return 0
+	lineText = lineText.group()
+	lineNum = re.search(getLineNum, lineText)
+	if not lineNum:
+		return 0
+	lineNum = int(lineNum.group())
+	if lineNum <= 0:
+		return 0
+	return lineNum
+
+getBreakpointState = re.compile("Enabled|Disabled")
+
+class VSBreakpoint(UIA):
+
+	def event_nameChange(self):
+		global caretMovedToDifferentLine
+		# return if we already announced the break point for the current line 
+		if not caretMovedToDifferentLine:
+			return
+		caretMovedToDifferentLine = False
+		currentLineNum = _getCurLineNumber()
+		BPLineNum = self._getLineNumber()
+		if currentLineNum == 0 or BPLineNum == 0 \
+		or currentLineNum != BPLineNum:
+			return
+		global announceBreakpoints, beepOnbreakPoints
+		if beepOnBreakpoints:
+			tones.beep(1000, 50)
+		if not announceBreakpoints:
+			return
+		ui.message(_("Breakpoint"))
+		global getBreakpointState
+		state = re.search(getBreakpointState, self.name)
+		if  state:
+			ui.message(state.group())
+
+	def _getLineNumber(self):
+		try:
+			ret=self.UIAElement.currentAutomationID
+		except Exception as e:
+			return 0
+		lineNum = re.search(getLineNum, ret)
+		if not lineNum:
+			return 0
+		lineNum = int(lineNum.group())
+		if lineNum <= 0:
+			return 0
+		return lineNum
+
+#currently, we need this class to try to tell whether the caret has moved to a different line
+#this helps us to not make several announcements of the same breakpoint when moving the caret left and rite on the same line
+class VSTextEditor(WpfTextView):
+
+	def script_caret_moveByLine(self, gesture):
+		global caretMovedToDifferentLine
+		caretMovedToDifferentLine = True
+		super(VSTextEditor, self).script_caret_moveByLine(gesture)
+
+
+#	__gestures = {
+#		"kb:upArrow": "onEditorScroll",
+#		"kb:downArrow": "onEditorScroll",
+#		"kb:pageUp": "onEditorScroll",
+#		"kb:pageDown": "onEditorScroll"
+#	}
