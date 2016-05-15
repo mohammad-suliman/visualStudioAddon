@@ -95,6 +95,8 @@ class AppModule(appModuleHandler.AppModule):
 		global intelliSenseLastFocused
 		global lastFocusedIntelliSenseItem
 		if obj.name == "Text Editor" and obj.role == controlTypes.ROLE_EDITABLETEXT:
+			# in many cases, the editor fire focus events when intelliSense menu is opened, which leads to a lengthy announcements after reporting the current intelliSense item
+			#so, allow the focus to return to the editor if that happens, but don't report the focus event, and set the navigator object to be last reported intelliSense item to allow the user to review
 			if _isCompletionPopupShowing():
 				api.setNavigatorObject(lastFocusedIntelliSenseItem)
 				intelliSenseLastFocused = True
@@ -157,6 +159,10 @@ class AppModule(appModuleHandler.AppModule):
 	}
 
 class editorTabItem(UIA):
+	"""
+	one of the editor focus ancestors, we ignore focus entered events in some cases 
+	see _shouldIgnoreEditorAncestorFocusEvents for more info
+	"""
 
 	def event_focusEntered(self):
 		if _shouldIgnoreEditorAncestorFocusEvents():
@@ -164,6 +170,8 @@ class editorTabItem(UIA):
 		return super(editorTabItem, self).event_focusEntered()
 
 class editorTabControl(UIA):
+	"""one of the editor focus ancestors, we ignore focus entered events in some cases 
+	see _shouldIgnoreEditorAncestorFocusEvents for more info"""
 
 	def event_focusEntered(self):
 		if _shouldIgnoreEditorAncestorFocusEvents():
@@ -207,11 +215,16 @@ class intelliSenseMenuItem(UIA):
 		super(intelliSenseMenuItem, self).event_gainFocus()
 
 	def _get_name(self):
+		# by default, the name of the intelliSense menu item includes the position info
+		#so, remove it
 		oldName = super(intelliSenseMenuItem, self).name
 		newName = re.sub(cutPositionalInfo, "", oldName)
 		return newName
 
 	def _get_positionInfo(self):
+		"""gets the position info of the intelliSense menu item based on the original name
+		the user can turn that off by setting to false the appropriate flag
+		"""
 		if announceIntelliSensePosInfo == False:
 			return {}
 		oldName = super(intelliSenseMenuItem, self).name
@@ -227,8 +240,10 @@ class intelliSenseMenuItem(UIA):
 			info['similarItemsInGroup'] = groupCount
 		return info
 
-
+#the parent view of the variables view in the locals / autos/ watch windows
 class VarsTreeView(IAccessible):
+	"""the parent view of the variables view in the locals / autos/ watch windows"""
+
 	role = controlTypes.ROLE_TREEVIEW
 	name = ''
 
@@ -240,8 +255,9 @@ class VarsTreeView(IAccessible):
 cutLevelInfo = re.compile(" @ tree depth \d+$")
 #a regular expression for getting the level
 getLevel = re.compile("\d+$")
-
 class BadVarView(ContentGenericClient):
+	"""the view that showes the variable info (name, value, type) in the locals / autos / watch windows"""
+
 	role = controlTypes.ROLE_TREEVIEWITEM
 	TextInfo=NVDAObjectTextInfo
 
@@ -267,7 +283,6 @@ class BadVarView(ContentGenericClient):
 		return 
 
 	def event_gainFocus(self):
-		log.debug(self._get_devInfo())
 		self.parent.firstChild = self
 		super(BadVarView, self).event_gainFocus()
 
@@ -343,8 +358,8 @@ class BadVarView(ContentGenericClient):
 	}
 
 
-# a class for ordinary menu items in visual studio
 class VSMenuItem(UIA):
+	""" a class for ordinary menu items in visual studio"""
 
 	def _get_states(self):
 		states = super(VSMenuItem, self)._get_states()
@@ -361,6 +376,7 @@ getLineText = re.compile("Ln \d+")
 getLineNum = re.compile("\d+$")
 
 def _getCurLineNumber():
+	"""gets current line number which has the caret in the editor based on status bar text"""
 	obj = api.getForegroundObject().lastChild
 	text = None
 	if obj and obj.role == controlTypes.ROLE_STATUSBAR:
@@ -382,6 +398,7 @@ def _getCurLineNumber():
 getBreakpointState = re.compile("Enabled|Disabled")
 
 class VSBreakpoint(UIA):
+	"""a class for break point control to allow us to detect and report break points once the caret reaches a line with break point""" 
 
 	def event_nameChange(self):
 		global caretMovedToDifferentLine
@@ -406,6 +423,7 @@ class VSBreakpoint(UIA):
 			ui.message(state.group())
 
 	def _getLineNumber(self):
+		"""gets the line number of the breakpoint """
 		try:
 			ret=self.UIAElement.currentAutomationID
 		except Exception as e:
@@ -418,19 +436,15 @@ class VSBreakpoint(UIA):
 			return 0
 		return lineNum
 
-#currently, we need this class to try to tell whether the caret has moved to a different line
-#this helps us to not make several announcements of the same breakpoint when moving the caret left and rite on the same line
 class VSTextEditor(WpfTextView):
+	"""a class for VS text editor  
+	currently, we need this class to try to tell whether the caret has moved to a different line 
+	this helps us to not make several announcements of the same breakpoint when moving the caret left and rite on the same line"""
+
+	description = ""
 
 	def script_caret_moveByLine(self, gesture):
 		global caretMovedToDifferentLine
 		caretMovedToDifferentLine = True
 		super(VSTextEditor, self).script_caret_moveByLine(gesture)
 
-
-#	__gestures = {
-#		"kb:upArrow": "onEditorScroll",
-#		"kb:downArrow": "onEditorScroll",
-#		"kb:pageUp": "onEditorScroll",
-#		"kb:pageDown": "onEditorScroll"
-#	}
