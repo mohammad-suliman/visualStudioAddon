@@ -2,11 +2,11 @@
 #author: mohammad suliman (mohmad.s93@gmail.com)
 
 import appModuleHandler
-from NVDAObjects.UIA import UIA, WpfTextView
-#from NVDAObjects.behaviors import EditableTextWithAutoSelectDetection
+from NVDAObjects.UIA import UIA, WpfTextView, Toast
+from NVDAObjects.behaviors import RowWithoutCellObjects, RowWithFakeNavigation
 from NVDAObjects.IAccessible import IAccessible, ContentGenericClient
 from NVDAObjects import NVDAObjectTextInfo
-
+import textInfos
 import controlTypes
 import UIAHandler
 import api
@@ -19,17 +19,24 @@ import eventHandler
 import scriptHandler
 from globalCommands import SCRCAT_FOCUS
 import re
+import time
+import speech
 
 # some user configuration vars to control how the add-on behaves
 announceIntelliSensePosInfo = False
 beepOnBreakpoints = True
 announceBreakpoints = True
+#reportIntelliSenseDescription = True
 
 # global vars
+
+#whether last focused object was an intelliSense item
 intelliSenseLastFocused = False
 
+#last focused intelliSense object
 lastFocusedIntelliSenseItem = None
 
+#whether the caret has moved to a different line in the code editor 
 caretMovedToDifferentLine = False
 
 # global functions
@@ -55,6 +62,16 @@ def _shouldIgnoreEditorAncestorFocusEvents():
 	global intelliSenseLastFocused
 	return intelliSenseLastFocused == True
 
+def _getCurIntelliSenseDescription():
+	obj = api.getForegroundObject()
+	try:
+		obj = obj.firstChild.firstChild.firstChild
+		if obj.role == controlTypes.ROLE_STATICTEXT:
+			return obj
+	except Exception as e:
+		pass
+	return None
+
 
 class AppModule(appModuleHandler.AppModule):
 
@@ -75,7 +92,12 @@ class AppModule(appModuleHandler.AppModule):
 			clsList.insert(0, VSBreakpoint)
 		elif obj.name == "Text Editor" and obj.role == controlTypes.ROLE_EDITABLETEXT:
 			clsList.insert(0, VSTextEditor)
-
+		elif obj.role == controlTypes.ROLE_DATAITEM and isinstance(obj, UIA) and obj.UIAElement.currentClassName == "ListViewItem":
+			clsList.insert(0, ErrorsListItem)
+		elif obj.name == "Quick Info Tool Tip" and obj.role == controlTypes.ROLE_TOOLTIP:
+			clsList.insert(0, QuickInfoToolTip)
+		elif obj.name == "Signature Help" and obj.role == controlTypes.ROLE_UNKNOWN and isinstance(obj, UIA) and obj.UIAElement.currentClassName == "WpfSignatureHelp":
+			clsList.insert(0, ParameterInfo)
 
 	def event_NVDAObject_init(self, obj):
 		if obj.name == "Active Files" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
@@ -83,7 +105,8 @@ class AppModule(appModuleHandler.AppModule):
 			#redundent announcement of the foreground object 
 			#and losing the real foreground object which makes reporting the status bar script not reliable			
 			obj.role = controlTypes.ROLE_LIST
-			obj.container = api.getForegroundObject()
+			if obj.container.name == "Desktop":
+				obj.container = api.getForegroundObject()
 			#description here also is redundant, so, remove it
 			obj.description = ""
 		elif obj.name == "Active Tool Windows" and obj.role  == controlTypes.ROLE_LIST:
@@ -105,8 +128,11 @@ class AppModule(appModuleHandler.AppModule):
 		lastFocusedIntelliSenseItem = None
 		nextHandler()
 
-#	def event_nameChange(self, obj, nextHandler):
-#		log.debug(obj._get_devInfo())
+	def event_appModule_loseFocus(self):
+		global intelliSenseLastFocused
+		global lastFocusedIntelliSenseItem
+		lastFocusedIntelliSenseItem		= None
+		intelliSenseLastFocused = False
 
 #almost copied from NVDA core with minor modifications
 	def script_reportStatusLine(self, gesture):
@@ -140,11 +166,22 @@ class AppModule(appModuleHandler.AppModule):
 	script_reportStatusLine.__doc__ = _("Reads the current application status bar and moves the navigator to it. If pressed twice, spells the information")
 	script_reportStatusLine.category=SCRCAT_FOCUS
 
-	def event_appModule_loseFocus(self):
-		global intelliSenseLastFocused
-		global lastFocusedIntelliSenseItem
-		lastFocusedIntelliSenseItem		= None
-		intelliSenseLastFocused = False
+	def script_reportParameterInfo(self, gesture):
+		# get the parameter info object
+		try:
+			obj = api.getForegroundObject().firstChild.firstChild
+		except:
+			return
+		if obj.role == controlTypes.ROLE_TOOLTIP:
+			# emulate an alert event for this object
+			eventHandler.queueEvent("alert", obj)
+
+	# def script_reportIntelliSensDesc(self, gesture):
+		# gesture.send()
+		# obj = _getCurIntelliSenseDescription()
+		# if not obj:
+			# return 
+		# ui.message(obj.name)
 
 #this method is only for debugging, final release won't include it
 	def script_checkIfPopupCompletion(self, gesture):
@@ -155,7 +192,9 @@ class AppModule(appModuleHandler.AppModule):
 
 	__gestures = {
 		"kb:Alt+c": "checkIfPopupCompletion",
-		"kb:NVDA+End": "reportStatusLine"
+		"kb:NVDA+End": "reportStatusLine",
+		"kb:control+shift+space": "reportParameterInfo",
+		# "kb:control+i": "reportIntelliSensDesc"
 	}
 
 class editorTabItem(UIA):
@@ -171,7 +210,8 @@ class editorTabItem(UIA):
 
 class editorTabControl(UIA):
 	"""one of the editor focus ancestors, we ignore focus entered events in some cases 
-	see _shouldIgnoreEditorAncestorFocusEvents for more info"""
+	see _shouldIgnoreEditorAncestorFocusEvents for more info
+	"""
 
 	def event_focusEntered(self):
 		if _shouldIgnoreEditorAncestorFocusEvents():
@@ -212,6 +252,8 @@ class intelliSenseMenuItem(UIA):
 		global lastFocusedIntelliSenseItem
 		intelliSenseLastFocused = True
 		lastFocusedIntelliSenseItem = self
+		# self.description = _getCurIntelliSenseDescription()
+		self.description = None
 		super(intelliSenseMenuItem, self).event_gainFocus()
 
 	def _get_name(self):
@@ -240,6 +282,7 @@ class intelliSenseMenuItem(UIA):
 			info['similarItemsInGroup'] = groupCount
 		return info
 
+
 #the parent view of the variables view in the locals / autos/ watch windows
 class VarsTreeView(IAccessible):
 	"""the parent view of the variables view in the locals / autos/ watch windows"""
@@ -248,8 +291,7 @@ class VarsTreeView(IAccessible):
 	name = ''
 
 	def event_focusEntered(self):
-		ui.message(_("tree view"))
-
+		speech.speakObject(self,reason=controlTypes.REASON_FOCUSENTERED)
 
 # a regular expression for removing level info from the name
 cutLevelInfo = re.compile(" @ tree depth \d+$")
@@ -261,23 +303,29 @@ class BadVarView(ContentGenericClient):
 	role = controlTypes.ROLE_TREEVIEWITEM
 	TextInfo=NVDAObjectTextInfo
 
-
 	def _getMatchingParentChildren(self):
 		parentChildren = self.parent.children
 		matchingChildren = []
 		for index, child in enumerate(parentChildren):
-			if controlTypes.STATE_SELECTED in child.states or controlTypes.STATE_FOCUSED in child.states:
+			if controlTypes.STATE_SELECTED in child.states or controlTypes.STATE_FOCUSED in child.states and not child.name.startswith("[Column"):
 				matchingChildren.append(parentChildren[index + 1])
 				matchingChildren.append(parentChildren[index + 2])
+				if self._isCallStackWindow():
+					break
 				matchingChildren.append(parentChildren[index + 3])
 				break
 		return matchingChildren
+
+	def _isCallStackWindow(self):
+		try:
+			return self.parent.parent.parent.parent.name == "Call Stack"
+		except:
+			return False
 
 	def isDuplicateIAccessibleEvent(self,obj):
 		if isinstance(obj, BadVarView):
 			return self == obj
 		return super(BadVarView, self).isDuplicateIAccessibleEvent(obj)
-
 
 	def event_stateChange(self):
 		return 
@@ -290,21 +338,21 @@ class BadVarView(ContentGenericClient):
 		matchingChildren = self._getMatchingParentChildren()
 		if matchingChildren is None:
 			return None
-		if len(matchingChildren) < 3:
+		if len(matchingChildren) < 2:
 			return None
-		nameStr = []
-		varName = matchingChildren.pop(0).value
-		#if the variable has no name, then this view is not meaningful 
-		if varName is None:
-			return None
-		# remove the level info
-		varName = str(varName)
-		varName = re.sub(cutLevelInfo, "", varName)
-		nameStr.append("name: " + varName)
-		nameStr.append("value: " + str(matchingChildren.pop(0).value))
-		nameStr.append("type: " + str(matchingChildren.pop(0).value))
-		return ", ".join(nameStr)
-
+		res  = []
+		for child in matchingChildren:
+			name = child.name
+			value = child.value
+			#remove the level info 
+			value = str(value)
+			value = re.sub(cutLevelInfo, "", value)
+			res.append(name + ": ")
+			res.append(value)
+			res.append(", ")
+		#remove last coma 
+		res.pop(-1)
+		return "".join(res)
 
 	def _get_states(self):
 		superStates = super(BadVarView, self).states
@@ -314,7 +362,8 @@ class BadVarView(ContentGenericClient):
 		if len(matchingChildren) == 0:
 			return superStates
 		states = matchingChildren[0]._get_states() | superStates
-		if self.name is None:
+		if self.name.startswith("Name: None"):
+			#if this happens, then the view has no meaningful info
 			states.add(controlTypes.STATE_UNAVAILABLE)
 		return states
 
@@ -416,11 +465,13 @@ class VSBreakpoint(UIA):
 			tones.beep(1000, 50)
 		if not announceBreakpoints:
 			return
-		ui.message(_("Breakpoint"))
 		global getBreakpointState
+		message = _("breakpoint")
 		state = re.search(getBreakpointState, self.name)
 		if  state:
-			ui.message(state.group())
+			message += ", " 
+			message += state.group()
+		ui.message(message)
 
 	def _getLineNumber(self):
 		"""gets the line number of the breakpoint """
@@ -439,7 +490,8 @@ class VSBreakpoint(UIA):
 class VSTextEditor(WpfTextView):
 	"""a class for VS text editor  
 	currently, we need this class to try to tell whether the caret has moved to a different line 
-	this helps us to not make several announcements of the same breakpoint when moving the caret left and rite on the same line"""
+	this helps us to not make several announcements of the same breakpoint when moving the caret left and rite on the same line
+	"""
 
 	description = ""
 
@@ -447,4 +499,89 @@ class VSTextEditor(WpfTextView):
 		global caretMovedToDifferentLine
 		caretMovedToDifferentLine = True
 		super(VSTextEditor, self).script_caret_moveByLine(gesture)
+
+splitError= re.compile("(Severity:.*)(Code:.*)(Description:.*)(Project:.*)(File:.*)(Line:.*)")
+splitErrorNoCodeCol = re.compile("(Severity:.*)(Description:.*)(Project:.*)(File:.*)(Line:.*)")
+splitErrorNoFileCol = re.compile("(Severity:.*)(Code:.*)(Description:.*)(Project:.*)(Line:.*)")
+splitErrorNoLineCol = re.compile("(Severity:.*)(Code:.*)(Description:.*)(Project:.*)(File:.*)")
+class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
+	""" a class for list item of the errors list
+	the goal is to enable the user to navigate each row with NVDA's commands for navigating tables (ctrl+alt+right/left arrow). in addition, it is possible to move directly to a column with ctrl + alt + number, when the number is the column number we wish to move to
+	"""
+
+	def _getColumnContent(self, column):
+		text = self._getColumnContentAndHeader(column)
+		# extract the content
+		text = text.split(":", 1)[1]
+		#remove spaces if there are any
+		text = text.strip()
+		return text
+
+	def _getColumnHeader(self, column):
+		text = self._getColumnContentAndHeader(column)
+		# extract the header
+		text = text.split(":", 2)[0]
+		#remove spaces if there are any
+		text = text.strip()
+		return text
+
+	def _getColumnContentAndHeader(self, column):
+		global splitError, splitErrorNoCodeCol, splitErrorNoFileCol, splitErrorNoLineCol
+		if column < 1 or column > 6:
+			return ""
+		try:
+			return re.search(splitError, self.name).group(column)
+		except:
+			pass
+		try:
+			return re.search(splitErrorNoCodeCol, self.name).group(column)
+		except:
+			pass
+		try:
+			return re.search(splitErrorNoFileCol, self.name).group(column)
+		except:
+			pass
+		try:
+			return re.search(splitErrorNoLineCol, self.name).group(column)
+		except:
+			pass
+		return ""
+
+	def _getColumnLocation(self,column):
+		#TODO 
+		pass
+
+	def _get_childCount(self):
+		return 6
+
+	def initOverlayClass(self):
+		for i in xrange(10):
+			self.bindGesture("kb:control+alt+" + str(i), "moveToColumn")
+
+	def script_moveToColumn(self, gesture):
+		keyName = gesture.displayName
+		# extract the number from the key name
+		columnNum = re.search("\d+$", keyName).group()
+		columnNum = int(columnNum)
+		if columnNum > 6 or columnNum == 0:
+			#currently, up to 6 columns is supported,  hopefuly this is the max number of columns that could be in this view
+			return
+		self._moveToColumnNumber(columnNum)
+
+
+class QuickInfoToolTip(Toast):
+	""" a class for the quick info tool tip view  """
+
+	def _get_name(self):
+		return "Quick Info"
+
+	def _get_description(self):
+		# this view has a long description, don't think the user wants to hear it every tiem he invokes the quick info
+		return ""
+
+class ParameterInfo (Toast):
+	role = controlTypes.ROLE_TOOLTIP
+
+	def _get_description(self):
+		return ""
 
