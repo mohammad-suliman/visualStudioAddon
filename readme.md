@@ -8,9 +8,10 @@ issues which have been fixed so far:
 *	status bar is now reported when using  standard NVDA key stroke (NVDA+end)
 *	break points are reported via speach and beeps
 *	 some enhancements to the files / tools windows switcher
-*	quick info tool tips are now supported. the shortcut for invoking this tool tip is ctrl + k and then ctrl + if
-*	basic support for parameter info, use ctrl _ shif + space to invoke this tool tipnote: the tool tip is not presented in a very friendly way, more fixes is needed.
-*	errors list now works with NVDA-s commands for navigating tables: control + alt + left / right arrow. also, it is possible to directly accessing the each column with control + alt + number, when number is the number of the column you wish to access. for example: to access the first column use control + alt + 1.
+*	quick info tool tips are now supported. the shortcut for invoking this tool tip is ctrl + k and then ctrl + i
+*	basic support for parameter info, use ctrl + shift + space to invoke this tool tip
+note: the tool tip is not presented in a very friendly way, more fixes are needed.
+*	errors list now works with NVDA's commands for navigating tables: control + alt + left / right arrow. also, it is possible to directly access each column with control + alt + number, where number is the number of the column you wish to access. for example: to access the first column use control + alt + 1.
 note: those commands might change in the near future if they founded to be problimatic.
 
 The add-on is still under development, so expect more fixes and enhancements.
