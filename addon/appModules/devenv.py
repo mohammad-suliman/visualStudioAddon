@@ -548,8 +548,16 @@ class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
 		return ""
 
 	def _getColumnLocation(self,column):
-		#TODO 
-		pass
+		if column < 1 or column > 6:
+			return None
+		child = None
+		try:
+			child = UIA._get_children(self)[column - 1].firstChild
+		except Exception as e:
+			log.debug(e)
+		if not child:
+			return None
+		return child.location
 
 	def _get_childCount(self):
 		return 6
