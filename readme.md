@@ -13,7 +13,7 @@ issues which have been fixed so far:
 note: the tool tip is not presented in a very friendly way, more fixes are needed.
 *	errors list now works with NVDA's commands for navigating tables: control + alt + left / right arrow. also, it is possible to directly access each column with control + alt + number, where number is the number of the column you wish to access. for example: to access the first column use control + alt + 1.
 note: those commands might change in the near future if they founded to be problimatic.
-
+*	NVDA now reports the current line when navigating the code with the debugger. (stepping in / over / out) with the corrisponding keyboard commands.
 The add-on is still under development, so expect more fixes and enhancements.
 Your feedback is very important: please let me know if you have suggestions or any thoughts that could help us further improve this add-on.
 
