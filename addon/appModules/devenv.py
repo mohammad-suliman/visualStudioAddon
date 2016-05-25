@@ -26,7 +26,7 @@ import speech
 announceIntelliSensePosInfo = False
 beepOnBreakpoints = True
 announceBreakpoints = True
-#reportIntelliSenseDescription = True
+reportIntelliSenseDescription = True
 
 # global vars
 
@@ -72,7 +72,6 @@ def _getCurIntelliSenseDescription():
 		pass
 	return None
 
-
 class AppModule(appModuleHandler.AppModule):
 
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
@@ -86,7 +85,7 @@ class AppModule(appModuleHandler.AppModule):
 			clsList.insert(0, VSMenuItem)
 		elif obj.name == 'Treegrid Accessibility' and obj.role == controlTypes.ROLE_WINDOW:
 			clsList.insert(0, VarsTreeView)
-		elif obj.name is None and obj.windowClassName == 'TREEGRID' and obj.role == controlTypes.ROLE_PANE:
+		elif obj.name is None and obj.windowClassName == 'TREEGRID' and obj.role == controlTypes.ROLE_PANE and obj.windowStyle == 1444937728:
 			clsList.insert(0, BadVarView)
 		elif isinstance(obj, UIA) and obj.UIAElement.currentClassName == "TextMarker" and obj.role == controlTypes.ROLE_UNKNOWN and obj.name.startswith("Breakpoint"):
 			clsList.insert(0, VSBreakpoint)
@@ -101,12 +100,12 @@ class AppModule(appModuleHandler.AppModule):
 
 	def event_NVDAObject_init(self, obj):
 		if obj.name == "Active Files" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
-			#this object reports the descktop object as its container, this causes 2 issues 
+			#this object reports the descktop object as its parent, this causes 2 issues 
 			#redundent announcement of the foreground object 
-			#and losing the real foreground object which makes reporting the status bar script not reliable			
+			#and losing the real foreground object which makes reporting the status bar script not reliable
 			obj.role = controlTypes.ROLE_LIST
-			if obj.container.name == "Desktop":
-				obj.container = api.getForegroundObject()
+			if obj.parent.name == "Desktop":
+				obj.parent = api.getForegroundObject()
 			#description here also is redundant, so, remove it
 			obj.description = ""
 		elif obj.name == "Active Tool Windows" and obj.role  == controlTypes.ROLE_LIST:
@@ -115,8 +114,7 @@ class AppModule(appModuleHandler.AppModule):
 
 
 	def event_gainFocus(self, obj, nextHandler):
-		global intelliSenseLastFocused
-		global lastFocusedIntelliSenseItem
+		global intelliSenseLastFocused, lastFocusedIntelliSenseItem, count
 		if obj.name == "Text Editor" and obj.role == controlTypes.ROLE_EDITABLETEXT:
 			# in many cases, the editor fire focus events when intelliSense menu is opened, which leads to a lengthy announcements after reporting the current intelliSense item
 			#so, allow the focus to return to the editor if that happens, but don't report the focus event, and set the navigator object to be last reported intelliSense item to allow the user to review
@@ -228,6 +226,7 @@ class intelliSenseMenuItem(UIA):
 	def _get_states(self):
 		states = set()
 		#only fetch the states witch are likely to change
+		#fetching some states for this view can throw an exception
 		e=self.UIACachedStatesElement
 		try:
 			hasKeyboardFocus=e.cachedHasKeyboardFocus
@@ -252,8 +251,6 @@ class intelliSenseMenuItem(UIA):
 		global lastFocusedIntelliSenseItem
 		intelliSenseLastFocused = True
 		lastFocusedIntelliSenseItem = self
-		# self.description = _getCurIntelliSenseDescription()
-		self.description = None
 		super(intelliSenseMenuItem, self).event_gainFocus()
 
 	def _get_name(self):
@@ -262,6 +259,14 @@ class intelliSenseMenuItem(UIA):
 		oldName = super(intelliSenseMenuItem, self).name
 		newName = re.sub(cutPositionalInfo, "", oldName)
 		return newName
+#not reliable
+	# def _get_description(self):
+		# if not reportIntelliSenseDescription:
+			# return 
+		# obj = _getCurIntelliSenseDescription()
+		# if not obj:
+			# return 
+		# return " - " + obj.name
 
 	def _get_positionInfo(self):
 		"""gets the position info of the intelliSense menu item based on the original name
@@ -283,7 +288,7 @@ class intelliSenseMenuItem(UIA):
 		return info
 
 
-#the parent view of the variables view in the locals / autos/ watch windows
+#the parent view of the variables view in the locals / autos/ watch/ call stack  windows
 class VarsTreeView(IAccessible):
 	"""the parent view of the variables view in the locals / autos/ watch windows"""
 
@@ -298,7 +303,9 @@ cutLevelInfo = re.compile(" @ tree depth \d+$")
 #a regular expression for getting the level
 getLevel = re.compile("\d+$")
 class BadVarView(ContentGenericClient):
-	"""the view that showes the variable info (name, value, type) in the locals / autos / watch windows"""
+	"""the view that showes the variable info (name, value, type) in the locals / autos / watch windows
+	also, the call stack window uses this view to expose its info
+	"""
 
 	role = controlTypes.ROLE_TREEVIEWITEM
 	TextInfo=NVDAObjectTextInfo
@@ -474,7 +481,7 @@ class VSBreakpoint(UIA):
 		ui.message(message)
 
 	def _getLineNumber(self):
-		"""gets the line number of the breakpoint """
+		"""gets the line number of the breakpoint based on the automation ID"""
 		try:
 			ret=self.UIAElement.currentAutomationID
 		except Exception as e:
@@ -489,8 +496,9 @@ class VSBreakpoint(UIA):
 
 class VSTextEditor(WpfTextView):
 	"""a class for VS text editor  
-	currently, we need this class to try to tell whether the caret has moved to a different line 
+	we need this class to try to tell whether the caret has moved to a different line 
 	this helps us to not make several announcements of the same breakpoint when moving the caret left and rite on the same line
+	also, commands for navigating the code with the debugger now causes NVDA to report the line which was executed.
 	"""
 
 	description = ""
@@ -500,13 +508,39 @@ class VSTextEditor(WpfTextView):
 		caretMovedToDifferentLine = True
 		super(VSTextEditor, self).script_caret_moveByLine(gesture)
 
+#this method is only a work around til the bug with compareing UIA bookmarks is resolved
+#we need to use moveByLine only 
+	def script_debugger_step(self, gesture):
+		global caretMovedToDifferentLine
+		caretMovedToDifferentLine = True
+		try:
+			info=self.makeTextInfo(textInfos.POSITION_CARET)
+		except:
+			log.debug("exception")
+			gesture.send()
+			return
+		bookmark=info.bookmark
+		gesture.send()
+		for i in xrange(4):
+			caretMoved,newInfo=self._hasCaretMoved(bookmark)
+		if not caretMoved:
+			log.debug("caret move failed")
+		self._caretScriptPostMovedHelper(textInfos.UNIT_LINE,gesture,newInfo)
+
+	__gestures = {
+		"kb:f10": "debugger_step",
+		"kb:f11": "debugger_step",
+		"kb:shift+f11": "debugger_step"
+	}
+
+
 splitError= re.compile("(Severity:.*)(Code:.*)(Description:.*)(Project:.*)(File:.*)(Line:.*)")
 splitErrorNoCodeCol = re.compile("(Severity:.*)(Description:.*)(Project:.*)(File:.*)(Line:.*)")
 splitErrorNoFileCol = re.compile("(Severity:.*)(Code:.*)(Description:.*)(Project:.*)(Line:.*)")
 splitErrorNoLineCol = re.compile("(Severity:.*)(Code:.*)(Description:.*)(Project:.*)(File:.*)")
 class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
 	""" a class for list item of the errors list
-	the goal is to enable the user to navigate each row with NVDA's commands for navigating tables (ctrl+alt+right/left arrow). in addition, it is possible to move directly to a column with ctrl + alt + number, when the number is the column number we wish to move to
+	the goal is to enable the user to navigate each row with NVDA's commands for navigating tables (ctrl+alt+right/left arrow). in addition, it is possible to move directly to a column with ctrl + alt + number, where the number is the column number we wish to move to
 	"""
 
 	def _getColumnContent(self, column):
@@ -520,7 +554,7 @@ class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
 	def _getColumnHeader(self, column):
 		text = self._getColumnContentAndHeader(column)
 		# extract the header
-		text = text.split(":", 2)[0]
+		text = text.split(":", 1)[0]
 		#remove spaces if there are any
 		text = text.strip()
 		return text
@@ -587,6 +621,8 @@ class QuickInfoToolTip(Toast):
 		# this view has a long description, don't think the user wants to hear it every tiem he invokes the quick info
 		return ""
 
+#think the parameter info is useless, the info which is exposed to screen readers seems very poor compared to the description of this view in VS documentation
+#so, I am seriously considering removing it
 class ParameterInfo (Toast):
 	role = controlTypes.ROLE_TOOLTIP
 
