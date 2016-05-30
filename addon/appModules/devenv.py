@@ -102,9 +102,10 @@ class AppModule(appModuleHandler.AppModule):
 		if obj.name == "Active Files" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
 			#this object reports the descktop object as its parent, this causes 2 issues 
 			#redundent announcement of the foreground object 
-			#and losing the real foreground object which makes reporting the status bar script not reliable
+			#and losing the real foreground object which makes reporting the status bar script not reliable, which is crootial for breakpoint reporting to work.
 			obj.role = controlTypes.ROLE_LIST
-			if obj.parent.name == "Desktop":
+			parent = obj.parent
+			if parent.name == "Desktop"and parent.role == controlTypes.ROLE_WINDOW:
 				obj.parent = api.getForegroundObject()
 			#description here also is redundant, so, remove it
 			obj.description = ""
@@ -530,26 +531,28 @@ class VSTextEditor(WpfTextView):
 	__gestures = {
 		"kb:f10": "debugger_step",
 		"kb:f11": "debugger_step",
-		"kb:shift+f11": "debugger_step"
+		"kb:f5": "debugger_step",
+				"kb:shift+f11": "debugger_step"
 	}
 
 
-splitError= re.compile("(Severity:.*)(Code:.*)(Description:.*)(Project:.*)(File:.*)(Line:.*)")
-splitErrorNoCodeCol = re.compile("(Severity:.*)(Description:.*)(Project:.*)(File:.*)(Line:.*)")
-splitErrorNoFileCol = re.compile("(Severity:.*)(Code:.*)(Description:.*)(Project:.*)(Line:.*)")
-splitErrorNoLineCol = re.compile("(Severity:.*)(Code:.*)(Description:.*)(Project:.*)(File:.*)")
+splitError= re.compile("(Severity:.*)(Code:.*)(Description:.*\r?\n?.*)(Project:.*)(File:.*)(Line:.*)")
+splitErrorNoCodeCol = re.compile("(Severity:.*)(Description:.*\r?\n?.*)(Project:.*)(File:.*)(Line:.*)")
+splitErrorNoFileCol = re.compile("(Severity:.*)(Code:.*)(Description:.*\r?\n?.*)(Project:.*)(Line:.*)")
+splitErrorNoLineCol = re.compile("(Severity:.*)(Code:.*)(Description:.*\r?\n?.*)(Project:.*)(File:.*)")
 class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
 	""" a class for list item of the errors list
 	the goal is to enable the user to navigate each row with NVDA's commands for navigating tables (ctrl+alt+right/left arrow). in addition, it is possible to move directly to a column with ctrl + alt + number, where the number is the column number we wish to move to
 	"""
 
 	def _getColumnContent(self, column):
-		text = self._getColumnContentAndHeader(column)
-		# extract the content
-		text = text.split(":", 1)[1]
-		#remove spaces if there are any
-		text = text.strip()
-		return text
+		children = UIA._get_children(self)
+		try:
+			return children[column - 1].firstChild.name
+		except Exception as e:
+			log.debug(e)
+		return ""
+
 
 	def _getColumnHeader(self, column):
 		text = self._getColumnContentAndHeader(column)
@@ -594,7 +597,7 @@ class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
 		return child.location
 
 	def _get_childCount(self):
-		return 6
+		return len(UIA._get_children(self))
 
 	def initOverlayClass(self):
 		for i in xrange(10):
