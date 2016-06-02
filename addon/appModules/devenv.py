@@ -10,23 +10,20 @@ import textInfos
 import controlTypes
 import UIAHandler
 import api
-import winUser
 import ui
 import tones
-import mouseHandler
 from logHandler import log
 import eventHandler
 import scriptHandler
 from globalCommands import SCRCAT_FOCUS
 import re
-import time
 import speech
+import config
 
 # some user configuration vars to control how the add-on behaves
 announceIntelliSensePosInfo = False
 beepOnBreakpoints = True
 announceBreakpoints = True
-reportIntelliSenseDescription = True
 
 # global vars
 
@@ -39,39 +36,6 @@ lastFocusedIntelliSenseItem = None
 #whether the caret has moved to a different line in the code editor 
 caretMovedToDifferentLine = False
 
-# global functions
-def _isCompletionPopupShowing():
-	obj = api.getForegroundObject()
-	try:
-		if obj.firstChild.firstChild.firstChild.next.next.role == controlTypes.ROLE_POPUPMENU:
-			return True
-	except Exception as e:
-		pass
-	# try some rescy option 
-	try:
-		obj1 = obj .firstChild
-		obj2 = obj1.firstChild
-		if obj1.role == controlTypes.ROLE_WINDOW and obj1.name == ''\
-		and obj2.role == controlTypes.ROLE_WINDOW and obj2.name == '':
-			return True
-	except Exception as e:
-		pass
-	return False
-
-def _shouldIgnoreEditorAncestorFocusEvents():
-	global intelliSenseLastFocused
-	return intelliSenseLastFocused == True
-
-def _getCurIntelliSenseDescription():
-	obj = api.getForegroundObject()
-	try:
-		obj = obj.firstChild.firstChild.firstChild
-		if obj.role == controlTypes.ROLE_STATICTEXT:
-			return obj
-	except Exception as e:
-		pass
-	return None
-
 class AppModule(appModuleHandler.AppModule):
 
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
@@ -80,23 +44,25 @@ class AppModule(appModuleHandler.AppModule):
 		elif obj.role == controlTypes.ROLE_TABCONTROL and isinstance(obj, UIA) and obj.UIAElement.currentClassName == "DocumentGroup":
 			clsList.insert(0, editorTabControl)
 		elif isinstance(obj, UIA) and obj.UIAElement.currentClassName == "IntellisenseMenuItem" and obj.role == controlTypes.ROLE_MENUITEM:
-			clsList.insert(0, intelliSenseMenuItem)
+			clsList.insert(0, IntelliSenseMenuItem)
 		elif isinstance(obj, UIA) and obj.UIAElement.currentClassName == "MenuItem" and obj.role == controlTypes.ROLE_MENUITEM:
 			clsList.insert(0, VSMenuItem)
 		elif obj.name == 'Treegrid Accessibility' and obj.role == controlTypes.ROLE_WINDOW:
 			clsList.insert(0, VarsTreeView)
-		elif obj.name is None and obj.windowClassName == 'TREEGRID' and obj.role == controlTypes.ROLE_PANE and obj.windowStyle == 1444937728:
+		elif obj.name is None and obj.windowClassName == 'TREEGRID' and obj.role == controlTypes.ROLE_PANE:
 			clsList.insert(0, BadVarView)
 		elif isinstance(obj, UIA) and obj.UIAElement.currentClassName == "TextMarker" and obj.role == controlTypes.ROLE_UNKNOWN and obj.name.startswith("Breakpoint"):
-			clsList.insert(0, VSBreakpoint)
+			clsList.insert(0, Breakpoint)
 		elif obj.name == "Text Editor" and obj.role == controlTypes.ROLE_EDITABLETEXT:
-			clsList.insert(0, VSTextEditor)
+			clsList.insert(0, TextEditor)
 		elif obj.role == controlTypes.ROLE_DATAITEM and isinstance(obj, UIA) and obj.UIAElement.currentClassName == "ListViewItem":
 			clsList.insert(0, ErrorsListItem)
 		elif obj.name == "Quick Info Tool Tip" and obj.role == controlTypes.ROLE_TOOLTIP:
 			clsList.insert(0, QuickInfoToolTip)
 		elif obj.name == "Signature Help" and obj.role == controlTypes.ROLE_UNKNOWN and isinstance(obj, UIA) and obj.UIAElement.currentClassName == "WpfSignatureHelp":
 			clsList.insert(0, ParameterInfo)
+		elif obj.role == controlTypes.ROLE_LISTITEM and obj.windowClassName == "TBToolboxPane":
+			clsList.insert(0, ToolboxItem)
 
 	def event_NVDAObject_init(self, obj):
 		if obj.name == "Active Files" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
@@ -113,25 +79,24 @@ class AppModule(appModuleHandler.AppModule):
 			#do the same for tool windows List
 			obj.description = ""
 
-
-	def event_gainFocus(self, obj, nextHandler):
-		global intelliSenseLastFocused, lastFocusedIntelliSenseItem, count
-		if obj.name == "Text Editor" and obj.role == controlTypes.ROLE_EDITABLETEXT:
-			# in many cases, the editor fire focus events when intelliSense menu is opened, which leads to a lengthy announcements after reporting the current intelliSense item
-			#so, allow the focus to return to the editor if that happens, but don't report the focus event, and set the navigator object to be last reported intelliSense item to allow the user to review
-			if _isCompletionPopupShowing():
-				api.setNavigatorObject(lastFocusedIntelliSenseItem)
-				intelliSenseLastFocused = True
-				return 
-		intelliSenseLastFocused = False
-		lastFocusedIntelliSenseItem = None
-		nextHandler()
-
 	def event_appModule_loseFocus(self):
 		global intelliSenseLastFocused
 		global lastFocusedIntelliSenseItem
 		lastFocusedIntelliSenseItem		= None
 		intelliSenseLastFocused = False
+
+	def event_gainFocus(self, obj, nextHandler):
+		log.debug(obj.devInfo)		
+		global intelliSenseLastFocused, lastFocusedIntelliSenseItem
+		intelliSenseLastFocused = False
+		lastFocusedIntelliSenseItem = None
+		if self._shouldIgnoreFocusEvent(obj):
+			return 
+		nextHandler()
+
+	def _shouldIgnoreFocusEvent(self, obj):
+		if obj.name is None and obj.role == controlTypes.ROLE_UNKNOWN and obj.windowClassName == "TBToolboxPane":
+			return True
 
 #almost copied from NVDA core with minor modifications
 	def script_reportStatusLine(self, gesture):
@@ -175,14 +140,6 @@ class AppModule(appModuleHandler.AppModule):
 			# emulate an alert event for this object
 			eventHandler.queueEvent("alert", obj)
 
-	# def script_reportIntelliSensDesc(self, gesture):
-		# gesture.send()
-		# obj = _getCurIntelliSenseDescription()
-		# if not obj:
-			# return 
-		# ui.message(obj.name)
-
-#this method is only for debugging, final release won't include it
 	def script_checkIfPopupCompletion(self, gesture):
 		if _isCompletionPopupShowing():
 			ui.message("available")
@@ -192,9 +149,13 @@ class AppModule(appModuleHandler.AppModule):
 	__gestures = {
 		"kb:Alt+c": "checkIfPopupCompletion",
 		"kb:NVDA+End": "reportStatusLine",
-		"kb:control+shift+space": "reportParameterInfo",
-		# "kb:control+i": "reportIntelliSensDesc"
+		"kb:control+shift+space": "reportParameterInfo"
 	}
+
+
+def _shouldIgnoreEditorAncestorFocusEvents():
+	global intelliSenseLastFocused
+	return intelliSenseLastFocused == True
 
 class editorTabItem(UIA):
 	"""
@@ -218,16 +179,16 @@ class editorTabControl(UIA):
 		return super(editorTabControl, self).event_focusEntered()
 
 
-cutPositionalInfo = re.compile(" \d+ of \d+$")
-itemIndexExp = re.compile("^ \d+")
-groupCountExp = re.compile("\d+$")
+REG_CUT_POS_INFO = re.compile(" \d+ of \d+$")
+REG_GET_ITEM_INDEX = re.compile("^ \d+")
+REG_GET_GROUP_COUNT = re.compile("\d+$")
 
-class intelliSenseMenuItem(UIA):
+class IntelliSenseMenuItem(UIA):
 
 	def _get_states(self):
 		states = set()
 		#only fetch the states witch are likely to change
-		#fetching some states for this view can throw an exception
+		#fetching some states for this view can throw an exception, which causes a latency
 		e=self.UIACachedStatesElement
 		try:
 			hasKeyboardFocus=e.cachedHasKeyboardFocus
@@ -252,22 +213,14 @@ class intelliSenseMenuItem(UIA):
 		global lastFocusedIntelliSenseItem
 		intelliSenseLastFocused = True
 		lastFocusedIntelliSenseItem = self
-		super(intelliSenseMenuItem, self).event_gainFocus()
+		super(IntelliSenseMenuItem, self).event_gainFocus()
 
 	def _get_name(self):
 		# by default, the name of the intelliSense menu item includes the position info
 		#so, remove it
-		oldName = super(intelliSenseMenuItem, self).name
-		newName = re.sub(cutPositionalInfo, "", oldName)
+		oldName = super(IntelliSenseMenuItem, self).name
+		newName = re.sub(REG_CUT_POS_INFO, "", oldName)
 		return newName
-#not reliable
-	# def _get_description(self):
-		# if not reportIntelliSenseDescription:
-			# return 
-		# obj = _getCurIntelliSenseDescription()
-		# if not obj:
-			# return 
-		# return " - " + obj.name
 
 	def _get_positionInfo(self):
 		"""gets the position info of the intelliSense menu item based on the original name
@@ -277,19 +230,18 @@ class intelliSenseMenuItem(UIA):
 			return {}
 		oldName = super(intelliSenseMenuItem, self).name
 		info={}
-		if  cutPositionalInfo.search(oldName) is None:
+		if re.search(REG_CUT_POS_INFO, oldName) is None:
 			return {}
-		positionalInfoStr = cutPositionalInfo.search(oldName).group()
-		itemIndex = int(itemIndexExp.search(positionalInfoStr).group())
+		positionalInfoStr = re.search(REG_CUT_POS_INFO, oldName).group()
+		itemIndex = int(re.search(REG_GET_ITEM_INDEX, positionalInfoStr).group())
 		if itemIndex>0:
 			info['indexInGroup']=itemIndex
-		groupCount = int(groupCountExp.search(positionalInfoStr).group())
+		groupCount = int(re.search(REG_GET_GROUP_COUNT, positionalInfoStr).group())
 		if groupCount>0:
 			info['similarItemsInGroup'] = groupCount
 		return info
 
 
-#the parent view of the variables view in the locals / autos/ watch/ call stack  windows
 class VarsTreeView(IAccessible):
 	"""the parent view of the variables view in the locals / autos/ watch windows"""
 
@@ -334,13 +286,6 @@ class BadVarView(ContentGenericClient):
 		if isinstance(obj, BadVarView):
 			return self == obj
 		return super(BadVarView, self).isDuplicateIAccessibleEvent(obj)
-
-	def event_stateChange(self):
-		return 
-
-	def event_gainFocus(self):
-		self.parent.firstChild = self
-		super(BadVarView, self).event_gainFocus()
 
 	def _get_name(self):
 		matchingChildren = self._getMatchingParentChildren()
@@ -396,6 +341,26 @@ class BadVarView(ContentGenericClient):
 		info = {}
 		info["level"] = level
 		return info
+	def event_stateChange(self):
+		#we don't need to report this event for 2 reasons:
+		#expand / collapse events is faked with the scripts below, they won't work otherwise
+		#the view is more responsive without reporting this event
+		return 
+
+	def event_gainFocus(self):
+		if self.hasFocus == False:
+			#don't report  focus event for this view if the hasFocus property is False
+			#this event is redundant and confusing, and a correct focus event will be fired after this one
+			return
+		self.parent.firstChild = self
+		super(BadVarView, self).event_gainFocus()
+
+	def event_typedCharacter(self, ch):
+		#default implementation of typedCharacter causes VS and NVDA to crash badly, if the user hits esc while in the quick watch window
+		#only speek typed characters if the user wishes to
+		if config.conf["keyboard"]["speakTypedCharacters"] and ord(ch)>=32:
+			speech.speakSpelling(ch)
+		return
 
 	def script_moveRight(self, gesture):
 		if controlTypes.STATE_COLLAPSED in self.states:
@@ -416,18 +381,33 @@ class BadVarView(ContentGenericClient):
 
 
 class VSMenuItem(UIA):
-	""" a class for ordinary menu items in visual studio"""
+	"""ordinary menu items in visual studio"""
 
 	def _get_states(self):
 		states = super(VSMenuItem, self)._get_states()
 		# visual studio exposes the menu item which has a sub menu as collapsed
-		#remove this state and add HASPOP state to fix NVDA behavior
+		#add HASPOP state to fix NVDA behavior when this state is present
 		if controlTypes.STATE_COLLAPSED in states:
-			states.remove(controlTypes.STATE_COLLAPSED)
 			states.add(controlTypes.STATE_HASPOPUP)
 		#this state is redundant in this context
 		states.discard(controlTypes.STATE_CHECKABLE)
 		return states
+
+	def _get_keyboardShortcut(self):
+		ret = ""
+		try:
+			ret += self.UIAElement.currentAccessKey
+		except COMError:
+			pass
+		if ret != "":
+			#add a double space to the end of the string
+			ret +="  "
+		try:
+			ret += self.UIAElement.currentAcceleratorKey
+		except COMError:
+			pass
+		return ret
+
 
 getLineText = re.compile("Ln \d+")
 getLineNum = re.compile("\d+$")
@@ -454,7 +434,7 @@ def _getCurLineNumber():
 
 getBreakpointState = re.compile("Enabled|Disabled")
 
-class VSBreakpoint(UIA):
+class Breakpoint(UIA):
 	"""a class for break point control to allow us to detect and report break points once the caret reaches a line with break point""" 
 
 	def event_nameChange(self):
@@ -495,8 +475,8 @@ class VSBreakpoint(UIA):
 			return 0
 		return lineNum
 
-class VSTextEditor(WpfTextView):
-	"""a class for VS text editor  
+class TextEditor(WpfTextView):
+	"""VS text editor view 
 	we need this class to try to tell whether the caret has moved to a different line 
 	this helps us to not make several announcements of the same breakpoint when moving the caret left and rite on the same line
 	also, commands for navigating the code with the debugger now causes NVDA to report the line which was executed.
@@ -504,10 +484,37 @@ class VSTextEditor(WpfTextView):
 
 	description = ""
 
+	def event_gainFocus(self):
+		global lastFocusedIntelliSenseItem, intelliSenseLastFocused
+		# in many cases, the editor fire focus events when intelliSense menu is opened, which leads to a lengthy announcements after reporting the current intelliSense item
+		#so, allow the focus to return to the editor if that happens, but don't report the focus event, and set the navigator object to be last reported intelliSense item to allow the user to review
+		if self._isCompletionPopupShowing():
+			api.setNavigatorObject(lastFocusedIntelliSenseItem)
+			intelliSenseLastFocused = True
+			return 
+		super(TextEditor, self).event_gainFocus()
+
+	def _isCompletionPopupShowing(self):
+		obj = api.getForegroundObject()
+		try:
+			if obj.firstChild.firstChild.firstChild.next.next.role == controlTypes.ROLE_POPUPMENU:
+				return True
+		except Exception as e:
+			pass
+		try:
+			obj1 = obj .firstChild
+			obj2 = obj1.firstChild
+			if obj1.role == controlTypes.ROLE_WINDOW and obj1.name == ''\
+			and obj2.role == controlTypes.ROLE_WINDOW and obj2.name == '':
+				return True
+		except Exception as e:
+			pass
+		return False
+
 	def script_caret_moveByLine(self, gesture):
 		global caretMovedToDifferentLine
 		caretMovedToDifferentLine = True
-		super(VSTextEditor, self).script_caret_moveByLine(gesture)
+		super(TextEditor, self).script_caret_moveByLine(gesture)
 
 #this method is only a work around til the bug with compareing UIA bookmarks is resolved
 #we need to use moveByLine only 
@@ -532,14 +539,14 @@ class VSTextEditor(WpfTextView):
 		"kb:f10": "debugger_step",
 		"kb:f11": "debugger_step",
 		"kb:f5": "debugger_step",
-				"kb:shift+f11": "debugger_step"
+		"kb:shift+f11": "debugger_step"
 	}
 
 
-splitError= re.compile("(Severity:.*)(Code:.*)(Description:.*\r?\n?.*)(Project:.*)(File:.*)(Line:.*)")
-splitErrorNoCodeCol = re.compile("(Severity:.*)(Description:.*\r?\n?.*)(Project:.*)(File:.*)(Line:.*)")
-splitErrorNoFileCol = re.compile("(Severity:.*)(Code:.*)(Description:.*\r?\n?.*)(Project:.*)(Line:.*)")
-splitErrorNoLineCol = re.compile("(Severity:.*)(Code:.*)(Description:.*\r?\n?.*)(Project:.*)(File:.*)")
+REG_SPLIT_ERROR = re.compile("(Severity:.*)(Code:.*)(Description:.*\r?\n?.*)(Project:.*)(File:.*)(Line:.*)")
+REG_SPLIT_ERROR_NO_CODE_COL = re.compile("(Severity:.*)(Description:.*\r?\n?.*)(Project:.*)(File:.*)(Line:.*)")
+REG_SPLIT_ERROR_NO_FILE_COL = re.compile("(Severity:.*)(Code:.*)(Description:.*\r?\n?.*)(Project:.*)(Line:.*)")
+REG_SPLIT_ERROR_NO_LINE_COL = re.compile("(Severity:.*)(Code:.*)(Description:.*\r?\n?.*)(Project:.*)(File:.*)")
 class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
 	""" a class for list item of the errors list
 	the goal is to enable the user to navigate each row with NVDA's commands for navigating tables (ctrl+alt+right/left arrow). in addition, it is possible to move directly to a column with ctrl + alt + number, where the number is the column number we wish to move to
@@ -563,29 +570,29 @@ class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
 		return text
 
 	def _getColumnContentAndHeader(self, column):
-		global splitError, splitErrorNoCodeCol, splitErrorNoFileCol, splitErrorNoLineCol
+		global REG_SPLIT_ERROR, REG_SPLIT_ERROR_NO_CODE_COL, REG_SPLIT_ERROR_NO_FILE_COL, REG_SPLIT_ERROR_NO_LINE_COL
 		if column < 1 or column > 6:
 			return ""
 		try:
-			return re.search(splitError, self.name).group(column)
+			return re.search(REG_SPLIT_ERROR, self.name).group(column)
 		except:
 			pass
 		try:
-			return re.search(splitErrorNoCodeCol, self.name).group(column)
+			return re.search(REG_SPLIT_ERROR_NO_CODE_COL, self.name).group(column)
 		except:
 			pass
 		try:
-			return re.search(splitErrorNoFileCol, self.name).group(column)
+			return re.search(REG_SPLIT_ERROR_NO_FILE_COL, self.name).group(column)
 		except:
 			pass
 		try:
-			return re.search(splitErrorNoLineCol, self.name).group(column)
+			return re.search(REG_SPLIT_ERROR_NO_LINE_COL, self.name).group(column)
 		except:
 			pass
 		return ""
 
 	def _getColumnLocation(self,column):
-		if column < 1 or column > 6:
+		if column < 1 or column > self.childCount:
 			return None
 		child = None
 		try:
@@ -615,7 +622,6 @@ class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
 
 
 class QuickInfoToolTip(Toast):
-	""" a class for the quick info tool tip view  """
 
 	def _get_name(self):
 		return "Quick Info"
@@ -632,3 +638,32 @@ class ParameterInfo (Toast):
 	def _get_description(self):
 		return ""
 
+class ToolboxItem(IAccessible):
+	role = controlTypes.ROLE_TREEVIEWITEM
+
+	def event_gainFocus(self):
+		badStates = set((controlTypes.STATE_INVISIBLE, controlTypes.STATE_UNAVAILABLE, controlTypes.STATE_OFFSCREEN))
+		if badStates.issubset(self.states) or controlTypes.STATE_SELECTED not in self.states:
+			#if the focus object has those states, or the object don't has a selected state, don't report this invalid focus event.
+			#a valid focus event will be fired after then.
+			return
+		super(ToolboxItem, self).event_gainFocus()
+
+	def event_stateChange(self):
+		#no need to report state change for this object for the following reasons:
+		#on expand / collaps: a focus event is fired
+		#a state change event is fired when moving between tool box items, and causes NVDA to announce "not available" each time
+		return 
+
+	def _get_value(self):
+		#the value is exposed as level info, don't report it
+		return 
+
+	def _get_positionInfo(self):
+		info = {}
+		level = super(ToolboxItem, self).value
+		#the level is zero based, unlike NVDA's convention of 1 based level, so, fix it.
+		level = int(level)
+		level += 1
+		info["level"] = level
+		return info
