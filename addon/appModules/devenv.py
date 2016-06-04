@@ -29,14 +29,20 @@ announceBreakpoints = True
 
 #whether last focused object was an intelliSense item
 intelliSenseLastFocused = False
-
 #last focused intelliSense object
 lastFocusedIntelliSenseItem = None
-
 #whether the caret has moved to a different line in the code editor 
 caretMovedToDifferentLine = False
+#visual studio version
+studioVersion = None
 
 class AppModule(appModuleHandler.AppModule):
+
+	def __init__(self, processID, appName=None):
+		super(AppModule, self).__init__(processID, appName)
+		#put the version of visual studio in the global variable, so other parts of the code have access to it
+		global studioVersion 
+		studioVersion = self.productVersion
 
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
 		if obj.role == controlTypes.ROLE_TAB and isinstance(obj, UIA) and obj.UIAElement.currentClassName == "TabItem":
@@ -63,6 +69,8 @@ class AppModule(appModuleHandler.AppModule):
 			clsList.insert(0, ParameterInfo)
 		elif obj.role == controlTypes.ROLE_LISTITEM and obj.windowClassName == "TBToolboxPane":
 			clsList.insert(0, ToolboxItem)
+		elif obj.name == "Active Files" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
+			clsList.insert(0, SwitcherDialog)
 
 	def event_NVDAObject_init(self, obj):
 		if obj.name == "Active Files" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
@@ -75,8 +83,9 @@ class AppModule(appModuleHandler.AppModule):
 				obj.parent = api.getForegroundObject()
 			#description here also is redundant, so, remove it
 			obj.description = ""
-		elif obj.name == "Active Tool Windows" and obj.role  == controlTypes.ROLE_LIST:
-			#do the same for tool windows List
+		elif obj.windowClassName == "ToolWindowSelectAccList":
+			#all objects with this window class name have a description which is identical to the name
+			#don't think that someone is interested to hear it
 			obj.description = ""
 
 	def event_appModule_loseFocus(self):
@@ -97,6 +106,8 @@ class AppModule(appModuleHandler.AppModule):
 	def _shouldIgnoreFocusEvent(self, obj):
 		if obj.name is None and obj.role == controlTypes.ROLE_UNKNOWN and obj.windowClassName == "TBToolboxPane":
 			return True
+
+
 
 #almost copied from NVDA core with minor modifications
 	def script_reportStatusLine(self, gesture):
@@ -667,3 +678,74 @@ class ToolboxItem(IAccessible):
 		level += 1
 		info["level"] = level
 		return info
+
+class SwitcherDialog(IAccessible):
+	"""the view of the file / tool windows switcher which is used to move between opened files and active tool windows
+	in latest version of VS (2015 currently), only gainFocus event method is needed to report the first selected entry when a file is opened
+	in older versions, this view manages all the user interaction with this view. (moving between entries using the corresponding keyboard commands)
+	"""
+
+	def initOverlayClass(self):
+		#all entries of the dialog (active files and active tool windows entries)
+		self.entries = []
+		#whether a focus entered event should be fired to the active files list
+		self.shouldFireFocusEnteredEventFiles = True
+		#whether a focus entered event should be fired to the active tool windows  list
+		self.shouldFireFocusEnteredEventTools = True
+
+	def event_gainFocus(self):
+		#add active files entries 
+		try:
+			self.entries.extend(self.children[1].children)
+		except:
+			#no active files
+			pass
+		#add active tool windows entries
+		try:
+			self.entries.extend(self.children[0].children)
+		except:
+			#no active tool windows, this should not happen never
+			pass
+		self._reportSelectedEntry()
+
+	def _getSelectedEntry(self):
+		for entry in self.entries:
+			if controlTypes.STATE_SELECTED in entry.states:
+				return entry
+		return None
+
+	def _reportSelectedEntry(self):
+		obj = self._getSelectedEntry()
+		if obj is None:
+			return
+		self._reportFocusEnteredEvent(obj)
+		api.setNavigatorObject(obj)
+		speech.speakObject(obj, reason=controlTypes.REASON_FOCUS)
+
+	def _reportFocusEnteredEvent(self, obj):
+		"""checks if we need to fire a focusEntered event for the selected entry, and fires an event if we need to"""
+		if obj.parent.name == "Active Files" and self.shouldFireFocusEnteredEventFiles:
+			eventHandler.executeEvent("focusEntered", obj.parent)
+			self.shouldFireFocusEnteredEventFiles = False
+			self.shouldFireFocusEnteredEventTools = True
+		if obj.parent.name == "Active Tool Windows" and self.shouldFireFocusEnteredEventTools:
+			eventHandler.executeEvent("focusEntered", obj.parent)
+			self.shouldFireFocusEnteredEventFiles = True
+			self.shouldFireFocusEnteredEventTools = False
+
+	def script_onEntryChange(self, gesture):
+		gesture.send()
+		if studioVersion.startswith('14.0'):
+		#if VS 2015 is the current version, then don't do any thing, a correct focus event will be fired, and the controle will move to the focused view.
+			return
+		self._reportSelectedEntry()
+
+
+	__gestures = {
+		"kb:control+downArrow": "onEntryChange",
+		"kb:control+upArrow": "onEntryChange",
+		"kb:control+leftArrow": "onEntryChange",
+		"kb:control+rightArrow": "onEntryChange",
+		"kb:control+tab": "onEntryChange",
+		"kb:control+shift+tab": "onEntryChange"
+		}
