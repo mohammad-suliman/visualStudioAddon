@@ -5,6 +5,7 @@ import appModuleHandler
 from NVDAObjects.UIA import UIA, WpfTextView, Toast
 from NVDAObjects.behaviors import RowWithoutCellObjects, RowWithFakeNavigation
 from NVDAObjects.IAccessible import IAccessible, ContentGenericClient
+from NVDAObjects.window import Desktop 
 from NVDAObjects import NVDAObjectTextInfo
 import textInfos
 import controlTypes
@@ -84,7 +85,7 @@ class AppModule(appModuleHandler.AppModule):
 			#and losing the real foreground object which makes reporting the status bar script not reliable, which is crootial for breakpoint reporting to work.
 			obj.role = controlTypes.ROLE_LIST
 			parent = obj.parent
-			if parent.name == "Desktop"and parent.role == controlTypes.ROLE_WINDOW:
+			if isinstance(parent, Desktop):
 				obj.parent = api.getForegroundObject()
 			#description here also is redundant, so, remove it
 			obj.description = ""
@@ -164,8 +165,7 @@ def _shouldIgnoreEditorAncestorFocusEvents():
 	return intelliSenseLastFocused == True
 
 class editorTabItem(UIA):
-	"""
-	one of the editor focus ancestors, we ignore focus entered events in some cases 
+	"""one of the editor focus ancestors, we ignore focus entered events in some cases 
 	see _shouldIgnoreEditorAncestorFocusEvents for more info
 	"""
 
@@ -173,9 +173,6 @@ class editorTabItem(UIA):
 		if _shouldIgnoreEditorAncestorFocusEvents():
 			return
 		return super(editorTabItem, self).event_focusEntered()
-
-	def _isEqual(self, other):
-		return False
 
 class editorTabControl(UIA):
 	"""one of the editor focus ancestors, we ignore focus entered events in some cases 
@@ -260,9 +257,9 @@ class VarsTreeView(IAccessible):
 	def event_focusEntered(self):
 		speech.speakObject(self,reason=controlTypes.REASON_FOCUSENTERED)
 
-# a regular expression for removing level info from the name
+# a regular expression for removing level info from first child's value, see _get_positionInfo for more info
 REG_CUT_LEVEL_INFO = re.compile(" @ tree depth \d+$")
-#a regular expression for getting the level
+#a regular expression for getting the level from the first matching child value, see _get_positionInfo for more info
 REG_GET_LEVEL = re.compile("\d+$")
 class BadVarView(ContentGenericClient):
 	"""the view that showes the variable info (name, value, type) in the locals / autos / watch windows
@@ -335,13 +332,17 @@ class BadVarView(ContentGenericClient):
 		return self is other
 
 	def _get_positionInfo(self):
-		# only calculate the level 
+		# only calculate the level
+		#the level is found in the first matching child's value. which is usually the name of the variable
+		#suppose  the view shows info about a var called i, which is not a part of an array, then value string will be as following
+		# i @ tree depth 1
 		#index in group,  similar items in group are not easy to calculate, and it won't be efficien
 		matchingChildStr = self._getMatchingParentChildren().pop(0).value
 		matchingChildStr = str(matchingChildStr)
-		if re.search(REG_GET_LEVEL, matchingChildStr) is None:
+		levelStr = re.search(REG_GET_LEVEL, matchingChildStr)
+		if levelStr is None:
 			return {}
-		levelStr = re.search(REG_GET_LEVEL, matchingChildStr).group()
+		levelStr = levelStr.group()
 		if not levelStr.isdigit():
 			return {}
 		level = int(levelStr)
@@ -367,7 +368,7 @@ class BadVarView(ContentGenericClient):
 
 	def event_typedCharacter(self, ch):
 		#default implementation of typedCharacter causes VS and NVDA to crash badly, if the user hits esc while in the quick watch window
-		#only speek typed characters if the user wishes to
+		#only speek typed characters if needed
 		if config.conf["keyboard"]["speakTypedCharacters"] and ord(ch)>=32:
 			speech.speakSpelling(ch)
 		return
@@ -399,10 +400,11 @@ class VSMenuItem(UIA):
 		#add HASPOP state to fix NVDA behavior when this state is present
 		if controlTypes.STATE_COLLAPSED in states:
 			states.add(controlTypes.STATE_HASPOPUP)
-		#this state is redundant in this context
+		#this state is redundant in this context, it causes NVDA to say "not checked" for each menu item
 		states.discard(controlTypes.STATE_CHECKABLE)
 		return states
 
+#this method is only a work around til the issue #6021 is resolved
 	def _get_keyboardShortcut(self):
 		ret = ""
 		try:
@@ -430,11 +432,11 @@ def _getCurLineNumber():
 		text = api.getStatusBarText(obj)
 	if not text:
 		return 0
-	lineText = re.search(REG_GET_LINE_TEXT, text)
-	if not lineText:
+	lineInfo = re.search(REG_GET_LINE_TEXT, text)
+	if not lineInfo:
 		return 0
-	lineText = lineText.group()
-	lineNum = re.search(REG_GET_LINE_NUM, lineText)
+	lineInfo = lineInfo.group()
+	lineNum = re.search(REG_GET_LINE_NUM, lineInfo)
 	if not lineNum:
 		return 0
 	lineNum = int(lineNum.group())
@@ -442,7 +444,7 @@ def _getCurLineNumber():
 		return 0
 	return lineNum
 
-REG_GET_BREAK_POINT_STATE = re.compile("Enabled|Disabled")
+REG_GET_BREAKPOINT_STATE = re.compile("Enabled|Disabled")
 
 class Breakpoint(UIA):
 	"""a class for break point control to allow us to detect and report break points once the caret reaches a line with break point""" 
@@ -463,9 +465,8 @@ class Breakpoint(UIA):
 			tones.beep(1000, 50)
 		if not announceBreakpoints:
 			return
-		global REG_GET_BREAK_POINT_STATE
 		message = _("breakpoint")
-		state = re.search(REG_GET_BREAK_POINT_STATE, self.name)
+		state = re.search(REG_GET_BREAKPOINT_STATE, self.name)
 		if  state:
 			message += ", " 
 			message += state.group()
@@ -625,8 +626,7 @@ class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
 		# extract the number from the key name
 		columnNum = re.search("\d+$", keyName).group()
 		columnNum = int(columnNum)
-		if columnNum > 6 or columnNum == 0:
-			#currently, up to 6 columns is supported,  hopefuly this is the max number of columns that could be in this view
+		if columnNum > self.childCount + 1or columnNum == 0:
 			return
 		self._moveToColumnNumber(columnNum)
 
@@ -681,7 +681,7 @@ class ToolboxItem(IAccessible):
 class SwitcherDialog(IAccessible):
 	"""the view of the file / tool windows switcher which is used to move between opened files and active tool windows
 	in latest version of VS (2015 currently), only gainFocus event method is needed to report the first selected entry when a file is opened
-	in older versions, this view manages all the user interaction with this view. (moving between entries using the corresponding keyboard commands)
+	in older versions, this view manages all the user interaction with this view. AKA moving between entries using the corresponding keyboard commands
 	"""
 
 	def initOverlayClass(self):
@@ -717,12 +717,12 @@ class SwitcherDialog(IAccessible):
 		obj = self._getSelectedEntry()
 		if obj is None:
 			return
-		self._reportFocusEnteredEvent(obj)
+		self._reportFocusEnteredEventForParent(obj)
 		api.setNavigatorObject(obj)
 		speech.speakObject(obj, reason=controlTypes.REASON_FOCUS)
 
-	def _reportFocusEnteredEvent(self, obj):
-		"""checks if we need to fire a focusEntered event for the selected entry, and fires an event if we need to"""
+	def _reportFocusEnteredEventForParent(self, obj):
+		"""checks if we need to fire a focusEntered event for the selected entry's parent, and fires an event if we need to"""
 		if obj.parent.name == "Active Files" and self.shouldFireFocusEnteredEventFiles:
 			eventHandler.executeEvent("focusEntered", obj.parent)
 			self.shouldFireFocusEnteredEventFiles = False
@@ -735,10 +735,9 @@ class SwitcherDialog(IAccessible):
 	def script_onEntryChange(self, gesture):
 		gesture.send()
 		if studioVersion.startswith('14.0'):
-		#if VS 2015 is the current version, then don't do any thing, a correct focus event will be fired, and the controle will move to the focused view.
+			#if VS 2015 is the current version, then don't do any thing, a correct focus event will be fired, and the controle will move to the focused view.
 			return
 		self._reportSelectedEntry()
-
 
 	__gestures = {
 		"kb:control+downArrow": "onEntryChange",
