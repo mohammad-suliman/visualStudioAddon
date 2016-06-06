@@ -15,6 +15,7 @@ note: the tool tip is not presented in a  friendly way, more fixes are needed.
 *	errors list now works with NVDA's commands for navigating tables: control + alt + left / right arrow. also, it is possible to directly access each column with control + alt + number, where number is the number of the column you wish to access. for example: to access the first column use control + alt + 1.
 note: those commands might change in the near future if they founded to be problimatic.
 *	NVDA now reports the current line when navigating the code with the debugger. (stepping in / over / out) with the corrisponding keyboard commands.
+*	fixes for the menus: keyboard shortcuts is now reported for each menu item if available, availability of submenus is reported
 *	tool box tool window improvements and fixes
 *	in windows forms designer, moving UI elements / resizing them with the keyboard is now reported
 *	using ctrl + f6 / ctrl + shift + f6 to switch between openned code editors is now reported
