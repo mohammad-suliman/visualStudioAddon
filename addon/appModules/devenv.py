@@ -19,6 +19,7 @@ from globalCommands import SCRCAT_FOCUS
 import re
 import speech
 import config
+import time
 
 # some user configuration vars to control how the add-on behaves
 announceIntelliSensePosInfo = False
@@ -71,6 +72,10 @@ class AppModule(appModuleHandler.AppModule):
 			clsList.insert(0, ToolboxItem)
 		elif obj.name == "Active Files" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
 			clsList.insert(0, SwitcherDialog)
+		elif obj.windowClassName.startswith("WindowsForms10.") and obj.windowText != "PropertyGridView":
+			clsList.insert(0, FormsComponent)
+		elif isinstance(obj, UIA) and obj.UIAElement.currentClassName == "ViewPresenter" and obj.role == controlTypes.ROLE_PANE:
+			clsList.insert(0, EditorAncestor)
 
 	def event_NVDAObject_init(self, obj):
 		if obj.name == "Active Files" and obj.role in (controlTypes.ROLE_DIALOG, controlTypes.ROLE_LIST):
@@ -95,7 +100,6 @@ class AppModule(appModuleHandler.AppModule):
 		intelliSenseLastFocused = False
 
 	def event_gainFocus(self, obj, nextHandler):
-		log.debug(obj.devInfo)		
 		global intelliSenseLastFocused, lastFocusedIntelliSenseItem
 		intelliSenseLastFocused = False
 		lastFocusedIntelliSenseItem = None
@@ -106,8 +110,6 @@ class AppModule(appModuleHandler.AppModule):
 	def _shouldIgnoreFocusEvent(self, obj):
 		if obj.name is None and obj.role == controlTypes.ROLE_UNKNOWN and obj.windowClassName == "TBToolboxPane":
 			return True
-
-
 
 #almost copied from NVDA core with minor modifications
 	def script_reportStatusLine(self, gesture):
@@ -151,14 +153,7 @@ class AppModule(appModuleHandler.AppModule):
 			# emulate an alert event for this object
 			eventHandler.queueEvent("alert", obj)
 
-	def script_checkIfPopupCompletion(self, gesture):
-		if _isCompletionPopupShowing():
-			ui.message("available")
-		else:
-			ui.message("not available")
-
 	__gestures = {
-		"kb:Alt+c": "checkIfPopupCompletion",
 		"kb:NVDA+End": "reportStatusLine",
 		"kb:control+shift+space": "reportParameterInfo"
 	}
@@ -178,6 +173,9 @@ class editorTabItem(UIA):
 		if _shouldIgnoreEditorAncestorFocusEvents():
 			return
 		return super(editorTabItem, self).event_focusEntered()
+
+	def _isEqual(self, other):
+		return False
 
 class editorTabControl(UIA):
 	"""one of the editor focus ancestors, we ignore focus entered events in some cases 
@@ -263,9 +261,9 @@ class VarsTreeView(IAccessible):
 		speech.speakObject(self,reason=controlTypes.REASON_FOCUSENTERED)
 
 # a regular expression for removing level info from the name
-cutLevelInfo = re.compile(" @ tree depth \d+$")
+REG_CUT_LEVEL_INFO = re.compile(" @ tree depth \d+$")
 #a regular expression for getting the level
-getLevel = re.compile("\d+$")
+REG_GET_LEVEL = re.compile("\d+$")
 class BadVarView(ContentGenericClient):
 	"""the view that showes the variable info (name, value, type) in the locals / autos / watch windows
 	also, the call stack window uses this view to expose its info
@@ -310,7 +308,7 @@ class BadVarView(ContentGenericClient):
 			value = child.value
 			#remove the level info 
 			value = str(value)
-			value = re.sub(cutLevelInfo, "", value)
+			value = re.sub(REG_CUT_LEVEL_INFO, "", value)
 			res.append(name + ": ")
 			res.append(value)
 			res.append(", ")
@@ -341,9 +339,9 @@ class BadVarView(ContentGenericClient):
 		#index in group,  similar items in group are not easy to calculate, and it won't be efficien
 		matchingChildStr = self._getMatchingParentChildren().pop(0).value
 		matchingChildStr = str(matchingChildStr)
-		if re.search(getLevel, matchingChildStr) is None:
+		if re.search(REG_GET_LEVEL, matchingChildStr) is None:
 			return {}
-		levelStr = re.search(getLevel, matchingChildStr).group()
+		levelStr = re.search(REG_GET_LEVEL, matchingChildStr).group()
 		if not levelStr.isdigit():
 			return {}
 		level = int(levelStr)
@@ -352,6 +350,7 @@ class BadVarView(ContentGenericClient):
 		info = {}
 		info["level"] = level
 		return info
+
 	def event_stateChange(self):
 		#we don't need to report this event for 2 reasons:
 		#expand / collapse events is faked with the scripts below, they won't work otherwise
@@ -373,21 +372,21 @@ class BadVarView(ContentGenericClient):
 			speech.speakSpelling(ch)
 		return
 
-	def script_moveRight(self, gesture):
+	def script_expand(self, gesture):
 		if controlTypes.STATE_COLLAPSED in self.states:
 			ui.message(_("expanded"))
 		gesture.send()
 		return
 
-	def script_moveLeft(self, gesture):
+	def script_collapse(self, gesture):
 		if controlTypes.STATE_EXPANDED in self.states:
 			ui.message(_("collapsed"))
 		gesture.send()
 		return
 
 	__gestures = {
-		"kb:leftArrow": "moveLeft",
-		"kb:rightArrow": "moveRight"
+		"kb:leftArrow": "collapse",
+		"kb:rightArrow": "expand"
 	}
 
 
@@ -420,8 +419,8 @@ class VSMenuItem(UIA):
 		return ret
 
 
-getLineText = re.compile("Ln \d+")
-getLineNum = re.compile("\d+$")
+REG_GET_LINE_TEXT = re.compile("Ln \d+")
+REG_GET_LINE_NUM = re.compile("\d+$")
 
 def _getCurLineNumber():
 	"""gets current line number which has the caret in the editor based on status bar text"""
@@ -431,11 +430,11 @@ def _getCurLineNumber():
 		text = api.getStatusBarText(obj)
 	if not text:
 		return 0
-	lineText = re.search(getLineText, text)
+	lineText = re.search(REG_GET_LINE_TEXT, text)
 	if not lineText:
 		return 0
 	lineText = lineText.group()
-	lineNum = re.search(getLineNum, lineText)
+	lineNum = re.search(REG_GET_LINE_NUM, lineText)
 	if not lineNum:
 		return 0
 	lineNum = int(lineNum.group())
@@ -443,7 +442,7 @@ def _getCurLineNumber():
 		return 0
 	return lineNum
 
-getBreakpointState = re.compile("Enabled|Disabled")
+REG_GET_BREAK_POINT_STATE = re.compile("Enabled|Disabled")
 
 class Breakpoint(UIA):
 	"""a class for break point control to allow us to detect and report break points once the caret reaches a line with break point""" 
@@ -464,9 +463,9 @@ class Breakpoint(UIA):
 			tones.beep(1000, 50)
 		if not announceBreakpoints:
 			return
-		global getBreakpointState
+		global REG_GET_BREAK_POINT_STATE
 		message = _("breakpoint")
-		state = re.search(getBreakpointState, self.name)
+		state = re.search(REG_GET_BREAK_POINT_STATE, self.name)
 		if  state:
 			message += ", " 
 			message += state.group()
@@ -478,7 +477,7 @@ class Breakpoint(UIA):
 			ret=self.UIAElement.currentAutomationID
 		except Exception as e:
 			return 0
-		lineNum = re.search(getLineNum, ret)
+		lineNum = re.search(REG_GET_LINE_NUM, ret)
 		if not lineNum:
 			return 0
 		lineNum = int(lineNum.group())
@@ -528,7 +527,7 @@ class TextEditor(WpfTextView):
 		super(TextEditor, self).script_caret_moveByLine(gesture)
 
 #this method is only a work around til the bug with compareing UIA bookmarks is resolved
-#we need to use moveByLine only 
+#we need to bind debugger stepping commands to  moveByLine only 
 	def script_debugger_step(self, gesture):
 		global caretMovedToDifferentLine
 		caretMovedToDifferentLine = True
@@ -749,3 +748,54 @@ class SwitcherDialog(IAccessible):
 		"kb:control+tab": "onEntryChange",
 		"kb:control+shift+tab": "onEntryChange"
 		}
+
+
+REG_SPLIT_LOCATION_TEXT = re.compile("(\d+), (\d+) (\d+), (\d+)")
+
+class FormsComponent(IAccessible):
+	"""the UI component in windows forms designer """
+
+	def script_onSizeChange(self, gesture):
+		gesture.send()
+		#get the position from the status bar
+		obj = api.getForegroundObject().lastChild
+		text = obj.children[2].name
+		width = re.match(REG_SPLIT_LOCATION_TEXT, text).group(3)
+		hight = re.match(REG_SPLIT_LOCATION_TEXT, text).group(4)
+		msg = _("width: %s  hight: %s" %(width, hight))
+		ui.message(msg)
+
+	def script_onLocationChange(self, gesture):
+		gesture.send()
+		#get the location from the status bar
+		obj = api.getForegroundObject().lastChild
+		text = obj.children[2].name
+		x = re.match(REG_SPLIT_LOCATION_TEXT, text).group(1)
+		y = re.match(REG_SPLIT_LOCATION_TEXT, text).group(2)
+		msg = "X: %s  y: %s" %(x, y)
+		ui.message(msg)
+
+	__gestures = {
+		"kb:shift+upArrow": "onSizeChange",
+		"kb:shift+downArrow": "onSizeChange",
+		"kb:shift+rightArrow": "onSizeChange",
+		"kb:shift+leftArrow": "onSizeChange",
+		"kb:control+upArrow": "onLocationChange",
+		"kb:control+downArrow": "onLocationChange",
+		"kb:control+rightArrow": "onLocationChange",
+		"kb:control+leftArrow": "onLocationChange",
+		"kb:upArrow": "onLocationChange",
+		"kb:downArrow": "onLocationChange",
+		"kb:leftArrow": "onLocationChange",
+		"kb:rightArrow": "onLocationChange"
+	}
+
+class EditorAncestor(UIA):
+	"""an ancestor of the code editor, we need this because this control returns true incorrectly when comparing it with other instance of the same type
+	this causes NVDA to not execute focus entered events when it should do
+	the issue is present when using ctrl + f6 / ctrl + shift + f6 to move between openned code editors
+	"""
+	
+	def _isEqual(self, other):
+		return False
+
