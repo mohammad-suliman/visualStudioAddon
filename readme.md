@@ -32,6 +32,12 @@ NVDA's behavior with intelliSense is now as the following:
 the focus of NVDA is usually placed in the editor, and the navigator object is the intelliSense menu item. so, you can review the last reported intelliSense item with review commands, (numpad keys on the desktop), and in the same time to type as usual in the editor and to get feedback.
 
 *	fixes to debugging windows: NVDA now reads the content of the wotch, locals, and autos windows.
+##controling the behavior of the add-on
+the add-on includes a gui dialog under NVDA preferences menu to control some settings within the add-on
+
+##installing the add-on
+*	if you are familiar with NVDA add-on development, you can build the add-on from source as usual.
+*	an alternative for that, is to simply copy the file addon\appModules\devenv.py to your app modules directory under Explore NVDA user configuration directory for your installed copy of NVDA. this directory can be found under NVDA folder in the start menu.
 
 ##important note: 
 I need your feedback to know which parts of the UI need further improvements, as well as feedback for the features which were already implemented.
