@@ -17,15 +17,10 @@ addon_info = {
 	"addon_summary" : _("visual studio add-on"),
 	# Add-on description
 	# Translators: Long description to be shown for this add-on on add-on information from add-ons manager
-	"addon_description" : _("""this add-on aims to resolve some issues with visual studio, and to enhance the user experience.
-major issues wich have been fixed rite now:
-emprovements to intelliSense.
-fixes for accessibility of the debug windows.
-
-the add-on still under development, so, expect more fixes and enhancements.
-your feedback is very important: please let me know if you have suggestions or any thoughts that could help us emprove this add-on further and further"""),
+	"addon_description" : _("""this add-on aims to resolve some issues with visual studio, and to enhance the user experience while using NVDA
+	please refer to the help seqtion to get the list of fixes and enhancements this add-on offers"""),
 	# version
-	"addon_version" : "0.5",
+	"addon_version" : "1.0",
 	# Author(s)
 	"addon_author" : u"mohammad suliman mohmad.s93@gmail.com",
 	# URL for the add-on documentation support
