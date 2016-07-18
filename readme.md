@@ -1,4 +1,4 @@
-	#add-on for visual studio
+#add-on for visual studio
 
 this add-on aims to resolve some issues with visual studio, and to enhance the user experience while using NVDA.
 
