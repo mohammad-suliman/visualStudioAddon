@@ -126,13 +126,34 @@ class AppModule(appModuleHandler.AppModule):
 
 	def event_gainFocus(self, obj, nextHandler):
 		global intelliSenseLastFocused, lastFocusedIntelliSenseItem
-		#we consider here that current focus object is not intelliSense menu item. 
-		#if this is not the case, then gainFocus event of IntelliSense overlay class will set those vars to the needed values.
-		intelliSenseLastFocused = False
-		lastFocusedIntelliSenseItem = None
+		if isinstance(obj, UIA) and obj.UIAElement.currentClassName == "WpfTextView" and obj.role == controlTypes.ROLE_EDITABLETEXT:
+			# in many cases, the editor fire focus events when intelliSense menu is opened, which leads to a lengthy announcements after reporting the current intelliSense item
+			#so, allow the focus to return to the editor if that happens, but don't report the focus event, and set the navigator object to be last reported intelliSense item to allow the user to review
+			if self._isCompletionPopupShowing():
+				api.setNavigatorObject(lastFocusedIntelliSenseItem)
+				return 
 		if self._shouldIgnoreFocusEvent(obj):
 			return 
+		intelliSenseLastFocused = False
+		lastFocusedIntelliSenseItem = None
 		nextHandler()
+
+	def _isCompletionPopupShowing(self):
+		obj = api.getForegroundObject()
+		try:
+			if obj.firstChild.firstChild.firstChild.next.next.role == controlTypes.ROLE_POPUPMENU:
+				return True
+		except Exception as e:
+			pass
+		try:
+			obj1 = obj .firstChild
+			obj2 = obj1.firstChild
+			if obj1.role == controlTypes.ROLE_WINDOW and obj1.name == ''\
+			and obj2.role == controlTypes.ROLE_WINDOW and obj2.name == '':
+				return True
+		except Exception as e:
+			pass
+		return False
 
 	def _shouldIgnoreFocusEvent(self, obj):
 		if obj.name is None and obj.role == controlTypes.ROLE_UNKNOWN and obj.windowClassName == "TBToolboxPane":
@@ -257,7 +278,7 @@ class IntelliSenseMenuItem(UIA):
 		# by default, the name of the intelliSense menu item includes the position info
 		#so, remove it
 		oldName = super(IntelliSenseMenuItem, self).name
-		newName = re.sub(REG_CUT_POS_INFO, "", oldName)
+		newName = re.sub(REG_CUT_POS_INFO, u"", oldName)
 		return newName
 
 	def _get_positionInfo(self):
@@ -332,7 +353,7 @@ class BadVarView(ContentGenericClient):
 
 	def _get_name(self):
 		matchingChildren = self._getMatchingParentChildren()
-		if matchingChildren is None:
+		if not matchingChildren:
 			return None
 		if len(matchingChildren) < 2:
 			return None
@@ -341,14 +362,13 @@ class BadVarView(ContentGenericClient):
 			name = child.name
 			value = child.value
 			#remove the level info 
-			value = str(value)
-			value = re.sub(REG_CUT_LEVEL_INFO, "", value)
-			res.append(name + ": ")
+			value = re.sub(REG_CUT_LEVEL_INFO, u"", value)
+			res.append(name + u": ")
 			res.append(value)
-			res.append(", ")
+			res.append(u", ")
 		#remove last coma 
 		res.pop(-1)
-		return "".join(res)
+		return u"".join(res)
 
 	def _get_states(self):
 		superStates = super(BadVarView, self).states
@@ -374,8 +394,11 @@ class BadVarView(ContentGenericClient):
 		#suppose  the view shows info about a var called i, which is not a part of an array, then value string will be as following:
 		# i @ tree depth 1
 		#index in group,  similar items in group are not easy to calculate, and it won't be efficien
-		matchingChildStr = self._getMatchingParentChildren().pop(0).value
-		matchingChildStr = str(matchingChildStr)
+		matchingChildren = self._getMatchingParentChildren()
+		if not matchingChildren:
+			return
+		matchingChildStr = matchingChildren.pop(0).value
+		# matchingChildStr = str(matchingChildStr)
 		levelStr = re.search(REG_GET_LEVEL, matchingChildStr)
 		if levelStr is None:
 			return {}
@@ -532,33 +555,6 @@ class TextEditor(WpfTextView):
 
 	description = ""
 
-	def event_gainFocus(self):
-		global lastFocusedIntelliSenseItem, intelliSenseLastFocused
-		# in many cases, the editor fire focus events when intelliSense menu is opened, which leads to a lengthy announcements after reporting the current intelliSense item
-		#so, allow the focus to return to the editor if that happens, but don't report the focus event, and set the navigator object to be last reported intelliSense item to allow the user to review
-		if self._isCompletionPopupShowing():
-			api.setNavigatorObject(lastFocusedIntelliSenseItem)
-			intelliSenseLastFocused = True
-			return 
-		super(TextEditor, self).event_gainFocus()
-
-	def _isCompletionPopupShowing(self):
-		obj = api.getForegroundObject()
-		try:
-			if obj.firstChild.firstChild.firstChild.next.next.role == controlTypes.ROLE_POPUPMENU:
-				return True
-		except Exception as e:
-			pass
-		try:
-			obj1 = obj .firstChild
-			obj2 = obj1.firstChild
-			if obj1.role == controlTypes.ROLE_WINDOW and obj1.name == ''\
-			and obj2.role == controlTypes.ROLE_WINDOW and obj2.name == '':
-				return True
-		except Exception as e:
-			pass
-		return False
-
 	def script_caret_moveByLine(self, gesture):
 		global caretMovedToDifferentLine
 		caretMovedToDifferentLine = True
@@ -674,7 +670,7 @@ class QuickInfoToolTip(Toast):
 	"""quick info toast, the goal is to get this view to be considered as toast by NVDA, so it will be reported when it fires an alert event"""
 
 	def _get_name(self):
-		return "Quick Info"
+		return u"Quick Info"
 
 	def _get_description(self):
 		# this view has a long description, don't think the user wants to hear it every tiem he invokes the quick info
