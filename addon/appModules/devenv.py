@@ -393,12 +393,11 @@ class BadVarView(ContentGenericClient):
 		#the level is found in the first matching child's value. which is usually the name of the variable
 		#suppose  the view shows info about a var called i, which is not a part of an array, then value string will be as following:
 		# i @ tree depth 1
-		#index in group,  similar items in group are not easy to calculate, and it won't be efficien
+		#index in group,  similar items in group are not easy to calculate, and it won't be efficient
 		matchingChildren = self._getMatchingParentChildren()
 		if not matchingChildren:
-			return
+			return {}
 		matchingChildStr = matchingChildren.pop(0).value
-		# matchingChildStr = str(matchingChildStr)
 		levelStr = re.search(REG_GET_LEVEL, matchingChildStr)
 		if levelStr is None:
 			return {}
