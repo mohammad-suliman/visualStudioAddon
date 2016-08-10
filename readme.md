@@ -46,7 +46,8 @@ the add-on includes a GUI dialog under NVDA preferences menu to control some set
 
 ##important notes
 
-*	I forgot to add support for express versions of visual studio, so, the add-on should work with those versions of VS... let me know if this doesn't happen for some reason.
+*	I forgot to add support for express versions of visual studio, so, the add-on should work with those versions of VS now... let me know if this doesn't happen for some reason.
+*	if you are using master or next versions of NVDA, please switch to the beta branch, and get the source from there. otherwice, the add-on won't work unfortunately.
 *	I need your feedback to know which parts of the UI need further improvements, as well as feedback for the features which were already implemented.
 You can reach me at: 
 mohmad.s93@gmail.com
