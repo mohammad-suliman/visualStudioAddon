@@ -11,7 +11,7 @@ addon_info = {
 	# for previously unpublished addons, please follow the community guidelines at:
 	# https://bitbucket.org/nvdaaddonteam/todo/raw/master/guideLines.txt
 	# add-on Name, internal for nvda
-	"addon_name" : "visualStudioAddon",
+	"addon_name" : "visualStudio",
 	# Add-on summary, usually the user visible name of the addon.
 	# Translators: Summary for this add-on to be shown on installation and add-on information.
 	"addon_summary" : _("visual studio add-on"),
@@ -20,7 +20,7 @@ addon_info = {
 	"addon_description" : _("""this add-on aims to resolve some issues with visual studio, and to enhance the user experience while using NVDA
 	please refer to the help seqtion to get the list of fixes and enhancements this add-on offers"""),
 	# version
-	"addon_version" : "1.0",
+	"addon_version" : "1.0dev",
 	# Author(s)
 	"addon_author" : u"mohammad suliman mohmad.s93@gmail.com",
 	# URL for the add-on documentation support
