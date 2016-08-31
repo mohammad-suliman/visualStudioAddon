@@ -3,9 +3,9 @@
 this add-on aims to resolve some issues with visual studio, and to enhance the user experience while using NVDA.
 
 ##supported versions
-the add-on have been tested with visual studio 2013 express and 2015 community and enterprise editions. however, it is expected to work with all editions from 2010 to 2015.
+the add-on has been tested with visual studio 2013 express and 2015 community and enterprise editions. however, it is expected to work with all editions from 2010 to 2015.
 if you have encountered any problem with getting the add-on to work with any edition of VS 2010 to 2015, please let me know. 
-also, if you have verified that the fixes by the add-on works with a version of VS which hasn't been tested so far, I'll be happy to hear from you, and update this doc accordingly.
+also, if you have verified that the fixes by the add-on work with a version of VS which hasn't been tested so far, I'll be happy to hear from you, and update this doc accordingly.
 
 ##issues which have been fixed so far
 *	Improvements to intelliSense.
@@ -16,11 +16,13 @@ also, if you have verified that the fixes by the add-on works with a version of 
 *	fixes to the file / tools windows switcher  in older versions of visual studio
 *	quick info tool tips are now supported. the shortcut for invoking this tool tip is ctrl + k and then ctrl + i
 *	basic support for parameter info, use ctrl + shift + space to invoke this tool tip
-note: the tool tip is not presented in a  friendly way, more fixes are needed.
-*	errors list now works with NVDA's commands for navigating tables: control + alt + left / right arrow. also, it is possible to directly access each column with control + alt + number, where number is the number of the column you wish to access. for example: to access the first column use control + alt + 1.
-note: those commands might change in the near future if they founded to be problematic.
+*	error list navigation improvements:
+*		errors list now works with NVDA's commands for navigating tables: control + alt + left / right arrow. 
+*		it is possible to directly access each column with control + alt + number, where number is the number of the column you wish to access. for example: to access the first column use control + alt + 1.
 *	NVDA now reports the current line when navigating the code with the debugger. (stepping in / over / out) with the corresponding keyboard commands.
-*	fixes for the menus: keyboard shortcuts are now reported for each menu item if available, availability of submenus is reported
+*	fixes for the menus: 
+*		keyboard shortcuts are now reported for each menu item if available 
+*		availability of submenus is reported
 *	tool box tool window improvements and fixes
 *	in windows forms designer, moving UI elements / resizing them with the keyboard is now reported
 *	using ctrl + f6 / ctrl + shift + f6 to switch between opened code editors is now reported
@@ -47,7 +49,6 @@ the add-on includes a GUI dialog under NVDA preferences menu to control some set
 ##important notes
 
 *	I forgot to add support for express versions of visual studio, so, the add-on should work with those versions of VS now... let me know if this doesn't happen for some reason.
-*	if you are using master or next versions of NVDA, please switch to the beta branch, and get the source from there. otherwice, the add-on won't work unfortunately.
 *	I need your feedback to know which parts of the UI need further improvements, as well as feedback for the features which were already implemented.
 You can reach me at: 
 mohmad.s93@gmail.com
