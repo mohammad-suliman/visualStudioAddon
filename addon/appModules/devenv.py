@@ -5,7 +5,11 @@
 #Copyright (C) 2016 Mohammad Suliman
 
 import appModuleHandler
-from NVDAObjects.UIA import UIA, WpfTextView, Toast
+from NVDAObjects.UIA import UIA, WpfTextView
+try:
+	from NVDAObjects.UIA import Toast_win8 as Toast
+except ImportError:
+	from NVDAObjects.UIA import Toast
 from NVDAObjects.behaviors import RowWithoutCellObjects, RowWithFakeNavigation
 from NVDAObjects.IAccessible import IAccessible, ContentGenericClient
 from NVDAObjects.window import Desktop 
