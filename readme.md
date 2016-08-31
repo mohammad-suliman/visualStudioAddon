@@ -17,12 +17,12 @@ also, if you have verified that the fixes by the add-on work with a version of V
 *	quick info tool tips are now supported. the shortcut for invoking this tool tip is ctrl + k and then ctrl + i
 *	basic support for parameter info, use ctrl + shift + space to invoke this tool tip
 *	error list navigation improvements:
-*		errors list now works with NVDA's commands for navigating tables: control + alt + left / right arrow. 
-*		it is possible to directly access each column with control + alt + number, where number is the number of the column you wish to access. for example: to access the first column use control + alt + 1.
+	*errors list now works with NVDA's commands for navigating tables: control + alt + left / right arrow. 
+	*it is possible to directly access each column with control + alt + number, where number is the number of the column you wish to access. for example: to access the first column use control + alt + 1.
 *	NVDA now reports the current line when navigating the code with the debugger. (stepping in / over / out) with the corresponding keyboard commands.
 *	fixes for the menus: 
-*		keyboard shortcuts are now reported for each menu item if available 
-*		availability of submenus is reported
+	*keyboard shortcuts are now reported for each menu item if available 
+	*availability of submenus is reported
 *	tool box tool window improvements and fixes
 *	in windows forms designer, moving UI elements / resizing them with the keyboard is now reported
 *	using ctrl + f6 / ctrl + shift + f6 to switch between opened code editors is now reported
