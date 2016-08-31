@@ -1,5 +1,8 @@
 # appModule for visual studio
 #author: mohammad suliman (mohmad.s93@gmail.com)
+#This file is covered by the GNU General Public License.
+#See the file COPYING for more details.
+#Copyright (C) 2016 Mohammad Suliman
 
 import appModuleHandler
 from NVDAObjects.UIA import UIA, WpfTextView, Toast
