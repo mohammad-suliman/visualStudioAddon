@@ -1,6 +1,10 @@
 #add-on for visual studio
 
 this add-on aims to resolve some issues with visual studio, and to enhance the user experience while using NVDA.
+##downloading the add-on
+you can download the add-on using 
+[this link](https://www.dropbox.com/s/eizkvddpnitmoyx/visualStudio-1.0dev.nvda-addon?dl=1)
+and then install it as any other add-on
 
 ##supported versions
 the add-on has been tested with visual studio 2013 express and 2015 community and enterprise editions. however, it is expected to work with all editions from 2010 to 2015.
