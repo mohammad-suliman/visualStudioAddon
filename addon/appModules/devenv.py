@@ -47,16 +47,11 @@ intelliSenseLastFocused = False
 lastFocusedIntelliSenseItem = None
 #whether the caret has moved to a different line in the code editor 
 caretMovedToDifferentLine = False
-#visual studio version
-studioVersion = None
 
 class AppModule(appModuleHandler.AppModule):
 
 	def __init__(self, processID, appName=None):
 		super(AppModule, self).__init__(processID, appName)
-		#put the version of visual studio in the global variable, so other parts of the code have access to it
-		global studioVersion 
-		studioVersion = self.productVersion
 		#add visual studio entry to preferences menu of NVDA
 		self.preferencesMenu = gui.mainFrame.sysTrayIcon.preferencesMenu
 		self.settingsItem = self.preferencesMenu.Append(wx.ID_ANY,
@@ -316,7 +311,7 @@ class VarsTreeView(IAccessible):
 	name = ''
 
 	def event_focusEntered(self):
-		#for some reason, NVDA doesn't execute a focusEvent for this object, so force it to do so
+		#for some reason, NVDA doesn't execute a focusEntered event for this object, so force it to do so
 		speech.speakObject(self,reason=controlTypes.REASON_FOCUSENTERED)
 
 # a regular expression for removing level info from first matching child's value, see _get_positionInfo for more info
@@ -326,8 +321,8 @@ REG_GET_LEVEL = re.compile("\d+$")
 class BadVarView(ContentGenericClient):
 	"""the view that showes the variable info (name, value, type) in the locals / autos / watch windows
 	also, the call stack window uses this view to expose its info
-	accessibility info for this view is retreaved from children of the parent view.
-	the matching children for the view has the focused / selected state. the number of matching children is 3, except for the call stack tool window, there, the number of matching children is 2.
+	accessibility info for this view is retreaved from the children of the parent view.
+	the matching children for the view has the focused / selected state. The number of matching children is 3, except for the call stack tool window, there, the number of matching children is 2.
 	refer to _getMatchingParentChildren method for more info
 	"""
 
@@ -464,15 +459,15 @@ class VSMenuItem(UIA):
 	def _get_states(self):
 		states = super(VSMenuItem, self)._get_states()
 		# visual studio exposes the menu item which has a sub menu as collapsed/ expanded
-		#add HASPOP state to fix NVDA behavior when this state is present
+		#add HASPOPup state to fix NVDA behavior when this state is present
 		if controlTypes.STATE_COLLAPSED in states or controlTypes.STATE_EXPANDED in states:
 			states.add(controlTypes.STATE_HASPOPUP)
 		#this state is redundant in this context, it causes NVDA to say "not checked" for each menu item
 		states.discard(controlTypes.STATE_CHECKABLE)
 		return states
 
-#this method is only a work around til the issue #6021 is resolved
 	def _get_keyboardShortcut(self):
+		#this method is redundant for NVDA 16.3 and newer. However, we need it for older versions of NVDA
 		ret = ""
 		try:
 			ret += self.UIAElement.currentAccessKey
@@ -517,10 +512,10 @@ class Breakpoint(UIA):
 	"""a class for break point control to allow us to detect and report break points once the caret reaches a line with break point""" 
 
 	def event_nameChange(self):
-		#a name changed event is fired by breakpoint UI control when the caret reaches a line with breakpoint, so, we rely on this to announce breakpoints
+		#a nameChange event is fired by breakpoint UI control when the caret reaches a line with breakpoint, so, we rely on this to announce breakpoints
 		global caretMovedToDifferentLine
 		if not caretMovedToDifferentLine:
-			#a name changed event can be fired multiple times when moving by character within the same line, so, return if we already announced the break point for the current line 
+			#a nameChange event can be fired multiple times when moving by character within the same line, so, return if we already announced the break point for the current line 
 			return
 		caretMovedToDifferentLine = False
 		currentLineNum = _getCurLineNumber()
@@ -613,7 +608,6 @@ class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
 			log.debug(e)
 		return ""
 
-
 	def _getColumnHeader(self, column):
 		text = self._getColumnContentAndHeader(column)
 		# extract the header
@@ -623,7 +617,7 @@ class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
 		return text
 
 	def _getColumnContentAndHeader(self, column):
-		if column < 1 or column > 6:
+		if column < 1 or column > self.childCount:
 			return ""
 		try:
 			return re.search(REG_SPLIT_ERROR, self.name).group(column)
@@ -660,15 +654,13 @@ class ErrorsListItem(RowWithoutCellObjects, RowWithFakeNavigation, UIA):
 
 	def initOverlayClass(self):
 		for i in xrange(1, self.childCount + 1):
-			self.bindGesture("kb:control+alt+" + str(i), "moveToColumn")
+			self.bindGesture("kb:control+alt+%d" %i, "moveToColumn")
 
 	def script_moveToColumn(self, gesture):
 		keyName = gesture.displayName
 		# extract the number from the key name
 		columnNum = re.search("\d+$", keyName).group()
 		columnNum = int(columnNum)
-		# if columnNum > self.childCount or columnNum == 0:
-			# return
 		self._moveToColumnNumber(columnNum)
 
 
@@ -691,6 +683,8 @@ class ParameterInfo (Toast):
 		return ""
 
 class ToolboxItem(IAccessible):
+	"""the tool box item view in the tool box tool windo"""
+	
 	role = controlTypes.ROLE_TREEVIEWITEM
 
 	def event_gainFocus(self):
@@ -761,7 +755,7 @@ class SwitcherDialog(IAccessible):
 			return
 		self._reportFocusEnteredEventForParent(obj)
 		api.setNavigatorObject(obj)
-		speech.speakObject(obj, reason=controlTypes.REASON_FOCUS)
+		obj.reportFocus()
 
 	def _reportFocusEnteredEventForParent(self, obj):
 		"""checks if we need to fire a focusEntered event for the selected entry's parent, and fires an event if we need to"""
@@ -776,8 +770,10 @@ class SwitcherDialog(IAccessible):
 
 	def script_onEntryChange(self, gesture):
 		gesture.send()
-		if studioVersion.startswith('14.0'):
-			#if VS 2015 is the  version used, then don't do any thing, a correct focus event will be fired, and the controle will move to the focused view.
+		studioVersion = self.appModule.productVersion[:2]
+		studioVersion = int(studioVersion)
+		if studioVersion >= 14:
+			#if VS 2015 or higher is the  version used, then don't do any thing, a correct focus event will be fired, and the controle will move to the focused view.
 			return
 		self._reportSelectedEntry()
 
