@@ -1,6 +1,7 @@
 #add-on for visual studio
 
 this add-on aims to resolve some issues with visual studio, and to enhance the user experience while using NVDA.
+
 ##downloading the add-on
 you can download the add-on using 
 [this link](https://www.dropbox.com/s/eizkvddpnitmoyx/visualStudio-1.0dev.nvda-addon?dl=1)
@@ -32,7 +33,6 @@ also, if you have verified that the fixes by the add-on work with a version of V
 *	using ctrl + f6 / ctrl + shift + f6 to switch between opened code editors is now reported
 
 The add-on is still under development, so expect more fixes and enhancements.
-Your feedback is very important: please let me know if you have suggestions or any thoughts that could help us further improve this add-on.
 
 ##Fixes in more detail
 
@@ -40,15 +40,14 @@ Your feedback is very important: please let me know if you have suggestions or a
 additionally, positional info of the suggested intelliSense items is not reported by default. EG "int 1 of 9" is now reported as "int". you can control whether to have this info from visual studio settings dialog under NVDA preferences menu.
 NVDA's behavior with intelliSense is now as the following:
 the focus of NVDA is usually placed in the editor, and the navigator object is the intelliSense menu item. so, you can review the last reported intelliSense item with review commands, (numpad keys on the desktop), and in the same time to type as usual in the editor and to get feedback.
-
 *	fixes to debugging windows: NVDA now reads the content of the watch, locals,, autos and call stack windows.
 
 ##controlling the behavior of the add-on
 the add-on includes a GUI dialog under NVDA preferences menu to control some settings within the add-on
-
-##installing the add-on
-*	if you are familiar with NVDA add-on development, you can build the add-on from source as usual.
-*	an alternative for that, is to simply copy the file addon\\appModules\\devenv.py to your app modules directory under Explore NVDA user configuration directory for your installed copy of NVDA. this directory can be found under NVDA folder under the start menu.
+settings you can control:
+*	reporting breakpoints with speech: you can choose whether breakpoints should be reported with speech.
+*	 beeping on breakpoints: you can choose whether NVDA should make a beep when the caret reaches a line with breakpoint.
+*	reporting intelliSense position info: you can choose whether position info of the code completion items should be reported by NVDA.
 
 ##important notes
 
