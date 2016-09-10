@@ -29,16 +29,13 @@ import speech
 import config
 import gui
 import wx
-from configobj import ConfigObj
-from cStringIO import StringIO
 
 #a config spec for visual studio settings within NVDA's configuration
-confspec = ConfigObj(StringIO("""
-announceBreakpoints = boolean(default=True)
-beepOnBreakpoints = boolean(default=True)
-reportIntelliSensePosInfo = boolean(default=False)
-"""))
-confspec.newlines = "\r\n"
+confspec = {
+	"announceBreakpoints": "boolean(default=True)",
+	"beepOnBreakpoints": "boolean(default=True)",
+	"reportIntelliSensePosInfo": "boolean(default=False)"
+}
 
 # global vars
 #whether last focused object was an intelliSense item
@@ -207,7 +204,8 @@ class AppModule(appModuleHandler.AppModule):
 			eventHandler.queueEvent("alert", obj)
 
 	__gestures = {
-		"kb:NVDA+End": "reportStatusLine",
+		"kb(desktop):NVDA+End": "reportStatusLine",
+		"kb(laptop):NVDA+Shift+End": "reportStatusLine",
 		"kb:control+shift+space": "reportParameterInfo"
 	}
 
@@ -290,11 +288,11 @@ class IntelliSenseMenuItem(UIA):
 		if not config.conf["visualStudio"]["reportIntelliSensePosInfo"]:
 			return {}
 		oldName = super(IntelliSenseMenuItem, self).name
-		info={}
 		try:
 			positionalInfoStr = re.search(REG_CUT_POS_INFO, oldName).group()
 		except:
 			return {}
+		info={}
 		itemIndex = int(re.search(REG_GET_ITEM_INDEX, positionalInfoStr).group())
 		if itemIndex>0:
 			info['indexInGroup']=itemIndex
@@ -437,15 +435,15 @@ class BadVarView(ContentGenericClient):
 
 	def script_expand(self, gesture):
 		if controlTypes.STATE_COLLAPSED in self.states:
+			#translators: a message indecating that a tree view item in watch / locals /... tool window has been expanded
 			ui.message(_("expanded"))
 		gesture.send()
-		return
 
 	def script_collapse(self, gesture):
 		if controlTypes.STATE_EXPANDED in self.states:
+			#translators: a message indecating that a tree view item in watch / locals /... tool window has been collapsed
 			ui.message(_("collapsed"))
 		gesture.send()
-		return
 
 	__gestures = {
 		"kb:leftArrow": "collapse",
@@ -798,6 +796,7 @@ class FormsComponent(IAccessible):
 		text = obj.children[2].name
 		width = re.match(REG_SPLIT_LOCATION_TEXT, text).group(3)
 		hight = re.match(REG_SPLIT_LOCATION_TEXT, text).group(4)
+		#translators: the width and the hight of a UI element in windows forms designer
 		msg = _("width: %s  hight: %s" %(width, hight))
 		ui.message(msg)
 
@@ -808,7 +807,8 @@ class FormsComponent(IAccessible):
 		text = obj.children[2].name
 		x = re.match(REG_SPLIT_LOCATION_TEXT, text).group(1)
 		y = re.match(REG_SPLIT_LOCATION_TEXT, text).group(2)
-		msg = "X: %s  y: %s" %(x, y)
+		#translators: the x coord and the y coord of a UI element in windows forms designer
+		msg = _("X: %s  y: %s" %(x, y))
 		ui.message(msg)
 
 	__gestures = {
