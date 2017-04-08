@@ -5,6 +5,7 @@
 #Copyright (C) 2016 Mohammad Suliman
 
 import appModuleHandler
+import addonHandler
 from NVDAObjects.UIA import UIA, WpfTextView
 try:
 	from NVDAObjects.UIA import Toast_win8 as Toast
@@ -29,6 +30,9 @@ import speech
 import config
 import gui
 import wx
+
+#initialize the translation system
+addonHandler.initTranslation()
 
 #a config spec for visual studio settings within NVDA's configuration
 confspec = {
